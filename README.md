@@ -1,6 +1,6 @@
-# 售前项目管道管理平台（非前端部分）
+# 售前项目管道管理平台
 
-本仓库已按《售前项目管道管理平台 · 最终方案》完成后端、数据库、部署运维、备份与自动化测试。根据本次要求，**没有实现前端页面**；后端已经预留静态文件托管和 React SPA 路由回退能力，后续把前端构建产物放入指定目录即可一起打包。
+本仓库已按《售前项目管道管理平台 · 最终方案》完成前端、后端、数据库、部署运维、备份与自动化测试。前端使用 React 19、TypeScript、Vite 和 Tailwind CSS，支持浏览器内置演示数据与真实后端 API 两种运行模式。
 
 ## 已完成能力
 
@@ -16,6 +16,9 @@
 - 自定义字段文本、数值、日期、选项四种类型校验
 - 导入预检和正式执行；每条记录独立事务，坏数据不污染同批其他记录
 - 主表、收入、进展三类模板化 JSON 导出，供前端生成 xlsx
+- 项目管道、收入矩阵、导入、导出和系统设置五类前端页面
+- 响应式工作台、项目详情、筛选排序、批量操作与状态反馈
+- 默认 Mock 演示模式，以及通过 `/api` 代理连接真实后端的联调模式
 - JSON 全量备份、MySQL 每日压缩备份、30 天滚动保留和显式确认恢复
 - Docker Compose 一体编排、健康检查、持久化卷和内网访问建议
 
@@ -23,6 +26,7 @@
 
 ```text
 .
+├── frontend/                    React 19 / TypeScript / Vite 前端
 ├── backend/                     Spring Boot 3.5 / Java 17 后端
 ├── db/init.sql                  MySQL 建库与字符集初始化
 ├── scripts/demo-data.sql        可重复执行的演示数据
@@ -36,9 +40,37 @@
 
 数据库由 Flyway 自动创建 8 张业务表。方案表格中遗漏但配置功能明确需要的第 8 张表，已落实为 `custom_field_definitions`。
 
+## 前端启动与构建
+
+要求：Node.js 22、npm 10。
+
+```bash
+cd frontend
+cp .env.example .env
+npm ci
+npm run dev
+```
+
+默认 `VITE_API_MODE=mock`，无需启动后端即可使用演示数据。需要联调真实服务时，将 `frontend/.env` 改为：
+
+```dotenv
+VITE_API_MODE=http
+```
+
+同时确保后端运行在 `http://localhost:8080`。Vite 会把 `/api` 请求代理到后端。
+
+生产构建与单独类型检查：
+
+```bash
+npm run build
+npm run typecheck
+```
+
+构建产物写入 `frontend/dist/`，该目录和 `node_modules/` 均不会提交到 Git。
+
 ## Docker 快速启动
 
-要求：Docker Engine 24+，并支持 `docker compose`。
+Docker Compose 当前负责启动 MySQL、后端和自动备份服务；前端可按上一节单独启动。要求 Docker Engine 24+，并支持 `docker compose`。
 
 1. 复制环境模板。
 
@@ -61,7 +93,7 @@
    curl http://127.0.0.1:8080/actuator/health
    ```
 
-健康响应为 `{"status":"UP"}` 即可。因为本次不交付前端，访问 `/` 时没有页面；API 从 `/api` 开始。
+健康响应为 `{"status":"UP"}` 即可。API 从 `/api` 开始。
 
 ### 灌入演示数据
 
@@ -200,9 +232,9 @@ server {
 }
 ```
 
-## 后续接入前端
+## 前后端一体化打包（可选）
 
-前端完成后，将其构建产物复制到：
+执行 `frontend/npm run build` 后，将 `frontend/dist/` 中的构建产物复制到：
 
 ```text
 backend/src/main/resources/static/
@@ -220,4 +252,12 @@ mvn test
 mvn clean package
 ```
 
-当前验收结果：Java 17 编译通过；端到端业务测试通过；可执行 jar 打包通过。
+前端验证：
+
+```bash
+cd frontend
+npm run typecheck
+npm run build
+```
+
+当前验收结果：前端 TypeScript 检查和生产构建通过；Java 17 编译通过；端到端业务测试通过；可执行 jar 打包通过。
