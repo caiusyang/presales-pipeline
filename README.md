@@ -1,0 +1,223 @@
+# 售前项目管道管理平台（非前端部分）
+
+本仓库已按《售前项目管道管理平台 · 最终方案》完成后端、数据库、部署运维、备份与自动化测试。根据本次要求，**没有实现前端页面**；后端已经预留静态文件托管和 React SPA 路由回退能力，后续把前端构建产物放入指定目录即可一起打包。
+
+## 已完成能力
+
+- 项目分页、筛选、排序、创建、完整更新、软删除与恢复
+- `external_id` 优先、客户名称加项目名称兜底的导入判重
+- 手工修改和导入覆盖的字段级变更日志，操作人当前固定为“我”
+- 项目详情一次返回基础信息、进展、月度收入和修改日志
+- 进展时间线新增、查询、软删除和恢复
+- 项目×月份收入批量保存、清空、覆盖及实时汇总
+- 按项目、行业、月份、年份进行 SQL 聚合统计
+- 字典树 CRUD、行业与子行业级联校验、引用删除保护、引用值安全改名
+- 导入映射、导出模板、自定义字段定义的完整配置接口
+- 自定义字段文本、数值、日期、选项四种类型校验
+- 导入预检和正式执行；每条记录独立事务，坏数据不污染同批其他记录
+- 主表、收入、进展三类模板化 JSON 导出，供前端生成 xlsx
+- JSON 全量备份、MySQL 每日压缩备份、30 天滚动保留和显式确认恢复
+- Docker Compose 一体编排、健康检查、持久化卷和内网访问建议
+
+## 目录
+
+```text
+.
+├── backend/                     Spring Boot 3.5 / Java 17 后端
+├── db/init.sql                  MySQL 建库与字符集初始化
+├── scripts/demo-data.sql        可重复执行的演示数据
+├── scripts/sample-import.json   导入接口示例
+├── ops/backup/                  自动备份与恢复脚本
+├── backups/                     本机备份落盘目录
+├── docs/API.md                  前后端联调契约
+├── docker-compose.yml           MySQL + 后端 + 备份服务
+└── .env.example                 部署参数模板
+```
+
+数据库由 Flyway 自动创建 8 张业务表。方案表格中遗漏但配置功能明确需要的第 8 张表，已落实为 `custom_field_definitions`。
+
+## Docker 快速启动
+
+要求：Docker Engine 24+，并支持 `docker compose`。
+
+1. 复制环境模板。
+
+   ```bash
+   cp .env.example .env
+   ```
+
+2. 修改 `.env` 中的 `MYSQL_PASSWORD` 和 `MYSQL_ROOT_PASSWORD`。正式环境不要使用模板值。
+
+3. 构建并启动。
+
+   ```bash
+   docker compose up -d --build
+   ```
+
+4. 检查状态。
+
+   ```bash
+   docker compose ps
+   curl http://127.0.0.1:8080/actuator/health
+   ```
+
+健康响应为 `{"status":"UP"}` 即可。因为本次不交付前端，访问 `/` 时没有页面；API 从 `/api` 开始。
+
+### 灌入演示数据
+
+```bash
+docker compose exec -T mysql sh -c \
+  'MYSQL_PWD="$MYSQL_PASSWORD" mysql -upresales presales_pipeline' \
+  < scripts/demo-data.sql
+```
+
+脚本可重复执行，不会重复创建示例项目和模板。
+
+### 停止与更新
+
+```bash
+docker compose down
+docker compose up -d --build
+```
+
+普通 `docker compose down` 不会删除数据库卷。不要执行 `docker compose down -v`，除非已经确认要永久删除全部数据库数据。
+
+## 非 Docker 启动
+
+要求：JDK 17、Maven 3.9、MySQL 8。
+
+先创建 `presales_pipeline` 数据库和数据库账号，再设置：
+
+```bash
+export DB_URL='jdbc:mysql://127.0.0.1:3306/presales_pipeline?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false'
+export DB_USERNAME='presales'
+export DB_PASSWORD='你的数据库密码'
+```
+
+然后打包运行：
+
+```bash
+cd backend
+mvn clean package
+java -jar target/presales-pipeline-1.0.0.jar
+```
+
+Flyway 会在首次启动时自动建表并写入基础字典。
+
+## API 约定
+
+所有业务接口统一返回：
+
+```json
+{
+  "code": 0,
+  "message": "成功",
+  "data": {}
+}
+```
+
+- `code = 0` 表示成功。
+- 参数错误使用 HTTP 400，数据冲突使用 409，资源不存在使用 404。
+- 金额单位统一为万元，数据库精度为 `DECIMAL(18,2)`。
+- 月份必须使用 `YYYY-MM`，业务时区统一为 `Asia/Shanghai`。
+- 当前无登录。变更日志的操作人由 `OperatorProvider` 提供，默认是环境变量 `APP_OPERATOR` 或“我”；未来接入 Spring Security/SSO 时替换该适配器即可，业务服务无需修改。
+
+完整接口、参数和导入格式见 [docs/API.md](docs/API.md)。
+
+## 导入流程
+
+Excel 的读取、列映射和值映射属于前端职责；后端接收转换后的 JSON。
+
+1. 前端先提交 `dryRun: true`，后端返回新增、覆盖、跳过数量和逐行原因。
+2. 用户确认后用相同记录提交 `dryRun: false`。
+3. 后端按外部编号优先判重，没有外部编号时按客户名称加项目名称判重。
+4. `fields` 中未出现的字段在覆盖时保持原值；出现且为 `null` 或空字符串时会清空。`customFields` 使用合并语义，空值会删除对应自定义字段值。
+5. 同一导入批次内的重复项目只处理第一次出现的记录。
+6. 每条记录使用独立事务，某一行校验失败不会留下半条数据，也不会阻断其他有效记录。
+
+可直接使用 [scripts/sample-import.json](scripts/sample-import.json) 调用 `/api/import`。
+
+## 备份与恢复
+
+### 自动 MySQL 备份
+
+`backup` 服务启动后会立即生成首份备份，之后默认每 86400 秒执行一次。文件写入 `backups/`，命名为：
+
+```text
+presales-pipeline-YYYYMMDD-HHMMSS.sql.gz
+```
+
+默认保留 30 天，可在 `.env` 中修改 `BACKUP_INTERVAL_SECONDS` 和 `BACKUP_RETENTION_DAYS`。
+
+### 一键 JSON 全量导出
+
+访问：
+
+```text
+GET /api/backup
+```
+
+会下载包含 8 张表、软删除记录和完整修改日志的 JSON。它适合快速留档；灾难恢复优先使用 MySQL 压缩备份。
+
+### 恢复 MySQL 备份
+
+恢复会覆盖当前同名表中的数据，建议先停止写入服务并再次备份：
+
+```bash
+docker compose stop backend backup
+CONFIRM_RESTORE=YES ./ops/backup/restore.sh backups/presales-pipeline-YYYYMMDD-HHMMSS.sql.gz
+docker compose start backend backup
+```
+
+恢复脚本没有 `CONFIRM_RESTORE=YES` 时会拒绝执行。
+
+## 内网访问控制
+
+本期没有登录能力，任何能访问应用地址的人都能读写数据。至少满足以下一项：
+
+- 只部署在受控内网；
+- 将 `APP_BIND_ADDRESS` 设为 `127.0.0.1`，再由 nginx 暴露并限制来源 IP；
+- 在主机或边界防火墙中只允许办公网段访问应用端口。
+
+nginx 白名单示例：
+
+```nginx
+server {
+    listen 80;
+    server_name presales.internal;
+
+    allow 10.0.0.0/8;
+    allow 172.16.0.0/12;
+    allow 192.168.0.0/16;
+    deny all;
+
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+## 后续接入前端
+
+前端完成后，将其构建产物复制到：
+
+```text
+backend/src/main/resources/static/
+```
+
+重新构建 jar 或 Docker 镜像。后端已支持无扩展名的 SPA 路由回退，并继续保留 `/api/**` 与 `/actuator/**`。
+
+## 验证
+
+后端测试覆盖完整业务主链：
+
+```bash
+cd backend
+mvn test
+mvn clean package
+```
+
+当前验收结果：Java 17 编译通过；端到端业务测试通过；可执行 jar 打包通过。

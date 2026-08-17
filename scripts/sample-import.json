@@ -1,0 +1,25 @@
+{
+  "mappingId": null,
+  "dryRun": true,
+  "records": [
+    {
+      "fields": {
+        "externalId": "SAMPLE-003",
+        "customerName": "示例制造集团",
+        "projectName": "工业网络安全建设",
+        "solution": "平台建设",
+        "track": "网络安全",
+        "industry": "制造",
+        "scenario": "工厂网络分区分域与边界防护",
+        "keyNeeds": "形成可落地的分期建设清单",
+        "customFields": {}
+      },
+      "revenues": [
+        {"month": "2026-11", "amount": 150.00}
+      ],
+      "progress": [
+        {"logDate": "2026-08-18", "content": "已完成基础资料收集"}
+      ]
+    }
+  ]
+}

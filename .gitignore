@@ -1,0 +1,9 @@
+.DS_Store
+.idea/
+.vscode/
+*.iml
+*.log
+.env
+backend/target/
+backups/*
+!backups/.gitkeep

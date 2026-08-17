@@ -1,0 +1,90 @@
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: presales-pipeline-mysql
+    environment:
+      TZ: Asia/Shanghai
+      MYSQL_DATABASE: presales_pipeline
+      MYSQL_USER: presales
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-presales_local_change_me_2026}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_local_change_me_2026}
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_0900_ai_ci
+      - --default-time-zone=+08:00
+    ports:
+      - "127.0.0.1:${MYSQL_PORT:-3306}:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./db/init.sql:/docker-entrypoint-initdb.d/00-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    restart: unless-stopped
+    networks:
+      - presales
+
+  backend:
+    build:
+      context: ./backend
+    container_name: presales-pipeline-backend
+    environment:
+      TZ: Asia/Shanghai
+      DB_URL: jdbc:mysql://mysql:3306/presales_pipeline?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false
+      DB_USERNAME: presales
+      DB_PASSWORD: ${MYSQL_PASSWORD:-presales_local_change_me_2026}
+      APP_OPERATOR: ${APP_OPERATOR:-我}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
+    ports:
+      - "${APP_BIND_ADDRESS:-0.0.0.0}:${APP_PORT:-8080}:8080"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8080/actuator/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped
+    networks:
+      - presales
+
+  backup:
+    image: mysql:8.4
+    container_name: presales-pipeline-backup
+    entrypoint: ["/bin/sh", "/scripts/backup.sh"]
+    environment:
+      TZ: Asia/Shanghai
+      MYSQL_HOST: mysql
+      MYSQL_DATABASE: presales_pipeline
+      MYSQL_USER: presales
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-presales_local_change_me_2026}
+      BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-86400}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-30}
+    volumes:
+      - ./ops/backup/backup.sh:/scripts/backup.sh:ro
+      - ./backups:/backups
+    depends_on:
+      mysql:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /backups/.last-success"]
+      interval: 1m
+      timeout: 5s
+      retries: 3
+      start_period: 2m
+    restart: unless-stopped
+    networks:
+      - presales
+
+volumes:
+  mysql_data:
+    name: presales-pipeline-mysql-data
+
+networks:
+  presales:
+    name: presales-pipeline-network
