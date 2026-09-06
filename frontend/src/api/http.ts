@@ -1,4 +1,4 @@
-import type { Paged } from '@/types'
+import type { Paged, Project } from '@/types'
 import type { ApiClient, ExportResult, ImportResult, ProjectListQuery, RevenueMatrix, RevenueStats } from './types'
 
 // ============================================================
@@ -45,13 +45,17 @@ const qs = (params: Record<string, unknown>) => {
   return s ? `?${s}` : ''
 }
 
-/** Spring Page → 前端 Paged */
-interface SpringPage<T> {
-  content: T[]
-  totalElements: number
+/** 后端 PageData（兼容标准 Spring Page）→ 前端 Paged */
+interface PageWire<T> {
+  items?: T[]
+  content?: T[]
+  totalElements?: number
 }
-const toPaged = <T>(p: SpringPage<T> | T[]): Paged<T> =>
-  Array.isArray(p) ? { items: p, total: p.length } : { items: p.content, total: p.totalElements }
+const toPaged = <T>(p: PageWire<T> | T[]): Paged<T> => {
+  if (Array.isArray(p)) return { items: p, total: p.length }
+  const items = p.items ?? p.content ?? []
+  return { items, total: p.totalElements ?? items.length }
+}
 
 /** BigDecimal 等数值线格式兜底转 number */
 const num = (v: unknown): number => (v == null ? 0 : Number(v))
@@ -70,7 +74,7 @@ function normalizeMatrix(raw: RevenueMatrix): RevenueMatrix {
 export const httpApi: ApiClient = {
   // ---------------- 项目 ----------------
   listProjects: async (q: ProjectListQuery) => {
-    const data = await req<SpringPage<never>>(`/projects${qs({ ...q, size: q.size ?? 50 })}`)
+    const data = await req<PageWire<Project>>(`/projects${qs({ ...q, size: q.size ?? 50 })}`)
     return toPaged(data)
   },
   getProjectDetail: (id) => req(`/projects/${id}/detail`),
