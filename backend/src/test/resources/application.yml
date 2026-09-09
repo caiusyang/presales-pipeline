@@ -21,6 +21,9 @@ logging:
     com.presales.pipeline: INFO
 
 app:
+  security:
+    username: test-admin
+    password: test-password-2026
   operator:
     fixed-name: 测试操作人
   cors:

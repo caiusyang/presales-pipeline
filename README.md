@@ -1,6 +1,6 @@
 # 售前项目管道管理平台
 
-本仓库已按《售前项目管道管理平台 · 最终方案》完成前端、后端、数据库、部署运维、备份与自动化测试。前端使用 React 19、TypeScript、Vite 和 Tailwind CSS，支持浏览器内置演示数据与真实后端 API 两种运行模式。
+本仓库已按《售前项目管道管理平台 · 最终方案》完成前端、后端、数据库、部署运维、备份与自动化测试，并增加单管理员登录、会话与 CSRF 防护。前端使用 React 19、TypeScript、Vite 和 Tailwind CSS，支持真实后端 API 与明确启用的浏览器演示模式。
 
 ## 已完成能力
 
@@ -18,7 +18,8 @@
 - 主表、收入、进展三类模板化 JSON 导出，供前端生成 xlsx
 - 项目管道、收入矩阵、导入、导出和系统设置五类前端页面
 - 响应式工作台、项目详情、筛选排序、批量操作与状态反馈
-- 默认 Mock 演示模式，以及通过 `/api` 代理连接真实后端的联调模式
+- 默认连接真实后端；仅在明确设置 `VITE_API_MODE=mock` 时启用浏览器演示模式
+- 单管理员登录、服务端会话、CSRF 写保护与登录账号审计
 - JSON 全量备份、MySQL 每日压缩备份、30 天滚动保留和显式确认恢复
 - Docker Compose 一体编排、健康检查、持久化卷和内网访问建议
 
@@ -51,13 +52,13 @@ npm ci
 npm run dev
 ```
 
-默认 `VITE_API_MODE=mock`，无需启动后端即可使用演示数据。需要联调真实服务时，将 `frontend/.env` 改为：
+默认 `VITE_API_MODE=http` 并连接真实后端：
 
 ```dotenv
 VITE_API_MODE=http
 ```
 
-同时确保后端运行在 `http://localhost:8080`。Vite 会把 `/api` 请求代理到后端。
+同时确保后端运行在 `http://localhost:8080`。Vite 会把 `/api` 请求代理到后端。如需纯前端演示，可明确改为 `VITE_API_MODE=mock`；此模式的数据只保存在当前浏览器中。
 
 生产构建与单独类型检查：
 
@@ -78,7 +79,7 @@ Docker Compose 当前负责启动 MySQL、后端和自动备份服务；前端�
    cp .env.example .env
    ```
 
-2. 修改 `.env` 中的 `MYSQL_PASSWORD` 和 `MYSQL_ROOT_PASSWORD`。正式环境不要使用模板值。
+2. 修改 `.env` 中的数据库密码及 `APP_AUTH_USERNAME`、`APP_AUTH_PASSWORD`。管理员密码至少 12 个字符；缺少登录配置时后端会拒绝启动。
 
 3. 构建并启动。
 
@@ -124,6 +125,8 @@ docker compose up -d --build
 export DB_URL='jdbc:mysql://127.0.0.1:3306/presales_pipeline?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false'
 export DB_USERNAME='presales'
 export DB_PASSWORD='你的数据库密码'
+export APP_AUTH_USERNAME='admin'
+export APP_AUTH_PASSWORD='至少十二个字符的独立密码'
 ```
 
 然后打包运行：
@@ -152,7 +155,9 @@ Flyway 会在首次启动时自动建表并写入基础字典。
 - 参数错误使用 HTTP 400，数据冲突使用 409，资源不存在使用 404。
 - 金额单位统一为万元，数据库精度为 `DECIMAL(18,2)`。
 - 月份必须使用 `YYYY-MM`，业务时区统一为 `Asia/Shanghai`。
-- 当前无登录。变更日志的操作人由 `OperatorProvider` 提供，默认是环境变量 `APP_OPERATOR` 或“我”；未来接入 Spring Security/SSO 时替换该适配器即可，业务服务无需修改。
+- 除 `/api/auth/csrf`、登录入口和健康检查外，业务接口必须登录后访问。
+- 写操作需要有效 CSRF 令牌；前端会自动获取和提交。
+- 变更日志的操作人取当前登录账号；没有安全上下文的后台任务才使用 `APP_OPERATOR` 兜底值。
 
 完整接口、参数和导入格式见 [docs/API.md](docs/API.md)。
 
@@ -203,9 +208,9 @@ docker compose start backend backup
 
 恢复脚本没有 `CONFIRM_RESTORE=YES` 时会拒绝执行。
 
-## 内网访问控制
+## 登录与内网访问控制
 
-本期没有登录能力，任何能访问应用地址的人都能读写数据。至少满足以下一项：
+系统使用 `.env` 中的单管理员账号登录。Docker 默认只监听 `127.0.0.1`；如需改为内网共享，仍建议至少满足以下一项：
 
 - 只部署在受控内网；
 - 将 `APP_BIND_ADDRESS` 设为 `127.0.0.1`，再由 nginx 暴露并限制来源 IP；
@@ -244,7 +249,7 @@ backend/src/main/resources/static/
 
 ## 验证
 
-后端测试覆盖完整业务主链：
+后端测试覆盖完整业务主链、未登录拦截、登录会话和 CSRF 防护：
 
 ```bash
 cd backend
@@ -256,8 +261,9 @@ mvn clean package
 
 ```bash
 cd frontend
+npm test
 npm run typecheck
 npm run build
 ```
 
-当前验收结果：前端 TypeScript 检查和生产构建通过；Java 17 编译通过；端到端业务测试通过；可执行 jar 打包通过。
+GitHub Actions 会在每次推送和 Pull Request 时自动执行前端依赖审计、测试、生产构建和后端测试。

@@ -104,6 +104,22 @@ export interface RevenueStats {
   items: RevenueStatItem[]
 }
 
+export interface DictionaryInput {
+  type: string
+  value: string
+  parentId: ID | null
+  sortOrder: number
+}
+
+export interface CustomFieldInput {
+  fieldKey: string
+  label: string
+  fieldType: CustomFieldType
+  required: boolean
+  options: string[]
+  sortOrder: number
+}
+
 // ---------- 导入 ----------
 /** 一条导入记录（前端解析映射后组装） */
 export interface ImportRecordInput {
@@ -184,8 +200,8 @@ export interface ApiClient {
 
   // 字典（树）
   getDictionaries(type?: string): Promise<DictNode[]>
-  createDictItem(input: { type: string; value: string; parentId?: ID | null; sortOrder: number }): Promise<DictNode>
-  updateDictItem(id: ID, input: Partial<{ value: string; parentId: ID | null; sortOrder: number }>): Promise<DictNode>
+  createDictItem(input: DictionaryInput): Promise<DictNode>
+  updateDictItem(id: ID, input: DictionaryInput): Promise<DictNode>
   /** 有下级或项目引用时后端返回 409 */
   deleteDictItem(id: ID): Promise<void>
 
@@ -201,16 +217,9 @@ export interface ApiClient {
   deleteExportTemplate(id: ID): Promise<void>
 
   listCustomFields(): Promise<CustomFieldDef[]>
-  createCustomField(input: {
-    fieldKey: string
-    label: string
-    fieldType: CustomFieldType
-    required: boolean
-    options: string[]
-    sortOrder: number
-  }): Promise<CustomFieldDef>
+  createCustomField(input: CustomFieldInput): Promise<CustomFieldDef>
   /** fieldKey 创建后不可改；改类型/必填/选项时后端会先校验现有数据 */
-  updateCustomField(id: ID, input: Partial<{ label: string; fieldType: CustomFieldType; required: boolean; options: string[]; sortOrder: number }>): Promise<CustomFieldDef>
+  updateCustomField(id: ID, input: CustomFieldInput): Promise<CustomFieldDef>
   /** 被项目数据引用时不可删除（409） */
   deleteCustomField(id: ID): Promise<void>
 

@@ -1,6 +1,15 @@
 # API 联调契约
 
-基础地址：`/api`。除下载型备份接口外，所有响应均为 `{code, message, data}`。
+基础地址：`/api`。所有响应均为 `{code, message, data}`。除获取 CSRF 令牌和登录外，业务接口均要求已登录的服务端会话；所有 POST、PUT、PATCH、DELETE 请求需要提交 CSRF 请求头。
+
+## 登录
+
+1. `GET /api/auth/csrf` 获取 `headerName` 和 `token`，并保持响应建立的会话。
+2. `POST /api/auth/login` 使用 `application/x-www-form-urlencoded` 提交 `username`、`password`，同时按上一步的 `headerName` 提交令牌。
+3. `GET /api/auth/me` 获取当前账号和角色。
+4. `POST /api/auth/logout` 退出登录，同样需要 CSRF 请求头。
+
+未登录访问业务接口返回 HTTP 401；缺少或使用无效 CSRF 令牌返回 HTTP 403。
 
 ## 项目
 

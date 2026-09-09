@@ -8,7 +8,7 @@ import type { ApiClient, ExportResult, ImportResult, ProjectListQuery, RevenueMa
 
 const BASE = '/api'
 
-class ApiError extends Error {
+export class ApiError extends Error {
   constructor(
     message: string,
     public status?: number,
@@ -17,23 +17,99 @@ class ApiError extends Error {
   }
 }
 
-async function req<T>(path: string, init?: RequestInit): Promise<T> {
+interface ApiEnvelope<T> {
+  code?: number
+  message?: string
+  data?: T
+}
+
+export interface AuthUser {
+  username: string
+  roles: string[]
+}
+
+interface CsrfInfo {
+  headerName: string
+  parameterName: string
+  token: string
+}
+
+let csrfRequest: Promise<CsrfInfo> | null = null
+
+function notifyUnauthorized(): void {
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event('presales:unauthorized'))
+}
+
+async function bareReq<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(BASE + path, {
-    headers: { 'Content-Type': 'application/json' },
+    credentials: 'same-origin',
     ...init,
   })
   if (res.status === 204) return undefined as T
-  let body: { code?: number; message?: string; data?: T } | null = null
+  let body: ApiEnvelope<T> | null = null
   try {
     body = await res.json()
   } catch {
     /* 非 JSON（如下载流） */
   }
-  if (!res.ok) throw new ApiError(body?.message || `请求失败：${res.status}`, res.status)
+  if (!res.ok) {
+    if (res.status === 401) notifyUnauthorized()
+    throw new ApiError(body?.message || `请求失败：${res.status}`, res.status)
+  }
   if (body && typeof body.code === 'number' && body.code !== 0) {
     throw new ApiError(body.message || '请求失败', res.status)
   }
   return (body ? body.data : undefined) as T
+}
+
+async function getCsrf(): Promise<CsrfInfo> {
+  if (!csrfRequest) csrfRequest = bareReq<CsrfInfo>('/auth/csrf')
+  try {
+    return await csrfRequest
+  } catch (error) {
+    csrfRequest = null
+    throw error
+  }
+}
+
+function isUnsafeMethod(method?: string): boolean {
+  return !['GET', 'HEAD', 'OPTIONS'].includes((method ?? 'GET').toUpperCase())
+}
+
+export async function req<T>(path: string, init?: RequestInit): Promise<T> {
+  const headers = new Headers(init?.headers)
+  if (init?.body != null && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json')
+  if (isUnsafeMethod(init?.method)) {
+    const csrf = await getCsrf()
+    headers.set(csrf.headerName, csrf.token)
+  }
+  return bareReq<T>(path, { ...init, headers })
+}
+
+export const authApi = {
+  currentUser: () => req<AuthUser>('/auth/me'),
+  login: async (username: string, password: string) => {
+    const csrf = await getCsrf()
+    const body = new URLSearchParams({ username, password })
+    const user = await bareReq<AuthUser>('/auth/login', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+        [csrf.headerName]: csrf.token,
+      },
+      body,
+    })
+    csrfRequest = null
+    return user
+  },
+  logout: async () => {
+    const csrf = await getCsrf()
+    await bareReq<void>('/auth/logout', {
+      method: 'POST',
+      headers: { [csrf.headerName]: csrf.token },
+    })
+    csrfRequest = null
+  },
 }
 
 const qs = (params: Record<string, unknown>) => {
@@ -130,9 +206,5 @@ export const httpApi: ApiClient = {
   getExportFields: (scope) => req(`/export/fields${qs({ scope })}`),
   exportData: (input) => req<ExportResult>('/export', { method: 'POST', body: JSON.stringify(input) }),
 
-  backupAll: async () => {
-    const res = await fetch(BASE + '/backup')
-    if (!res.ok) throw new ApiError(`备份失败：${res.status}`, res.status)
-    return res.json()
-  },
+  backupAll: () => req('/backup'),
 }

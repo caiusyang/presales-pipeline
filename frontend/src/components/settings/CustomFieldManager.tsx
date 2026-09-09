@@ -126,7 +126,14 @@ export function CustomFieldManager() {
       update.mutate(
         {
           id: dialog.def.id,
-          input: { label, fieldType: form.fieldType, required: form.required, options, sortOrder },
+          input: {
+            fieldKey: dialog.def.fieldKey,
+            label,
+            fieldType: form.fieldType,
+            required: form.required,
+            options,
+            sortOrder,
+          },
         },
         { onSuccess: () => setDialog(null) },
       )

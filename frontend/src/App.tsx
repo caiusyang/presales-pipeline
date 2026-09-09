@@ -2,6 +2,8 @@ import { lazy, Suspense } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { AppLayout } from '@/components/layout/AppLayout'
 import { Skeleton } from '@/components/ui/skeleton'
+import { AuthProvider, useAuth } from '@/auth/AuthContext'
+import LoginPage from '@/pages/LoginPage'
 
 // 路由级懒加载：echarts/xlsx 等大依赖随页面分包
 const PipelinePage = lazy(() => import('@/pages/PipelinePage'))
@@ -19,7 +21,10 @@ function PageLoading() {
   )
 }
 
-export default function App() {
+function AuthenticatedApp() {
+  const { status } = useAuth()
+  if (status === 'loading') return <PageLoading />
+  if (status === 'anonymous') return <LoginPage />
   return (
     <Routes>
       <Route element={<AppLayout />}>
@@ -31,5 +36,13 @@ export default function App() {
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>
+  )
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <AuthenticatedApp />
+    </AuthProvider>
   )
 }

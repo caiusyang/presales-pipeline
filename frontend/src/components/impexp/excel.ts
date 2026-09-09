@@ -14,6 +14,23 @@ export interface ParsedSheet {
   totalRows: number
 }
 
+export const MAX_IMPORT_FILE_BYTES = 10 * 1024 * 1024
+export const MAX_IMPORT_ROWS = 5_000
+export const MAX_IMPORT_COLUMNS = 200
+
+const SUPPORTED_IMPORT_EXTENSIONS = ['.xlsx', '.xls', '.csv']
+
+export function validateImportFile(file: Pick<File, 'name' | 'size'>): void {
+  const name = file.name.toLowerCase()
+  if (!SUPPORTED_IMPORT_EXTENSIONS.some((extension) => name.endsWith(extension))) {
+    throw new Error('仅支持 .xlsx、.xls 或 .csv 文件')
+  }
+  if (file.size === 0) throw new Error('文件为空')
+  if (file.size > MAX_IMPORT_FILE_BYTES) {
+    throw new Error(`文件不能超过 ${MAX_IMPORT_FILE_BYTES / 1024 / 1024} MB`)
+  }
+}
+
 /** 单元格统一转 string（number/Date/string/空 → string） */
 export function cellToString(v: unknown): string {
   if (v == null) return ''
@@ -23,11 +40,25 @@ export function cellToString(v: unknown): string {
 
 /** 解析上传的 xlsx/xls/csv 第一个 sheet；首行为表头（重名/空表头自动改名） */
 export async function parseExcelFile(file: File): Promise<ParsedSheet> {
+  validateImportFile(file)
   const buf = await file.arrayBuffer()
-  const wb = XLSX.read(buf)
+  const wb = XLSX.read(buf, {
+    dense: true,
+    cellFormula: false,
+    cellHTML: false,
+    cellNF: false,
+    cellStyles: false,
+  })
   const sheetName = wb.SheetNames[0]
   if (!sheetName) throw new Error('文件中没有工作表')
   const sheet = wb.Sheets[sheetName]
+  if (sheet['!ref']) {
+    const range = XLSX.utils.decode_range(sheet['!ref'])
+    const rowCount = range.e.r - range.s.r
+    const columnCount = range.e.c - range.s.c + 1
+    if (rowCount > MAX_IMPORT_ROWS) throw new Error(`数据不能超过 ${MAX_IMPORT_ROWS} 行`)
+    if (columnCount > MAX_IMPORT_COLUMNS) throw new Error(`列数不能超过 ${MAX_IMPORT_COLUMNS} 列`)
+  }
   const aoa = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1 })
   const grid = aoa.map((r) => (Array.isArray(r) ? r : []).map(cellToString))
   if (!grid.length || grid[0].every((c) => c.trim() === '')) {

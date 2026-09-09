@@ -1,8 +1,10 @@
 import { NavLink, Outlet } from 'react-router-dom'
-import { LayoutGrid, BarChart3, Upload, Download, Settings, DatabaseZap } from 'lucide-react'
+import { LayoutGrid, BarChart3, Upload, Download, Settings, DatabaseZap, LogOut } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { API_MODE } from '@/api'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { useAuth } from '@/auth/AuthContext'
 
 const NAV = [
   { to: '/', label: '项目管道', icon: LayoutGrid, end: true },
@@ -13,6 +15,7 @@ const NAV = [
 ]
 
 export function AppLayout() {
+  const { user, logout } = useAuth()
   return (
     <div className="flex h-screen overflow-hidden">
       {/* 侧边栏 */}
@@ -43,6 +46,14 @@ export function AppLayout() {
           ))}
         </nav>
         <div className="border-t p-3">
+          <div className="mb-2 flex items-center justify-between gap-2 text-xs text-muted-foreground">
+            <span className="truncate" title={user?.username}>{user?.username}</span>
+            {API_MODE === 'http' && (
+              <Button variant="ghost" size="icon-sm" aria-label="退出登录" onClick={() => void logout()}>
+                <LogOut className="h-3.5 w-3.5" />
+              </Button>
+            )}
+          </div>
           <Badge variant={API_MODE === 'mock' ? 'warning' : 'success'} className="w-full justify-center">
             {API_MODE === 'mock' ? '演示数据模式' : '已连接后端'}
           </Badge>

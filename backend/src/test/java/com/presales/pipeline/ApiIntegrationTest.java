@@ -7,6 +7,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
+import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
@@ -16,12 +17,14 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @SpringBootTest
 @AutoConfigureMockMvc
+@WithMockUser(username = "测试管理员", roles = "ADMIN")
 class ApiIntegrationTest {
 
     @Autowired
@@ -32,7 +35,7 @@ class ApiIntegrationTest {
 
     @Test
     void completeBusinessFlowWorks() throws Exception {
-        long trackId = dataId(mockMvc.perform(post("/api/dictionaries")
+        long trackId = dataId(mockMvc.perform(post("/api/dictionaries").with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"type":"track","value":"数据安全","parentId":null,"sortOrder":10}
@@ -41,7 +44,15 @@ class ApiIntegrationTest {
                 .andExpect(jsonPath("$.code").value(0))
                 .andReturn());
 
-        mockMvc.perform(post("/api/config/custom-fields")
+        mockMvc.perform(put("/api/dictionaries/{id}", trackId).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"type":"track","value":"数据安全","parentId":null,"sortOrder":20}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.sortOrder").value(20));
+
+        long customFieldId = dataId(mockMvc.perform(post("/api/config/custom-fields").with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -54,9 +65,25 @@ class ApiIntegrationTest {
                                 }
                                 """))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.fieldKey").value("stage"));
+                .andExpect(jsonPath("$.data.fieldKey").value("stage"))
+                .andReturn());
 
-        long mappingId = dataId(mockMvc.perform(post("/api/config/import-mappings")
+        mockMvc.perform(put("/api/config/custom-fields/{id}", customFieldId).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "fieldKey":"stage",
+                                  "label":"销售阶段",
+                                  "fieldType":"option",
+                                  "required":false,
+                                  "options":["初访","方案"],
+                                  "sortOrder":20
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.label").value("销售阶段"));
+
+        long mappingId = dataId(mockMvc.perform(post("/api/config/import-mappings").with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"name":"测试映射","columnMap":{},"valueRules":[]}
@@ -67,7 +94,7 @@ class ApiIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.name").value("测试映射"));
 
-        long templateId = dataId(mockMvc.perform(post("/api/config/export-templates")
+        long templateId = dataId(mockMvc.perform(post("/api/config/export-templates").with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -83,7 +110,7 @@ class ApiIntegrationTest {
                 .andExpect(status().isOk())
                 .andReturn());
 
-        long projectId = dataId(mockMvc.perform(post("/api/projects")
+        long projectId = dataId(mockMvc.perform(post("/api/projects").with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -105,11 +132,16 @@ class ApiIntegrationTest {
                 .andExpect(jsonPath("$.data.revenueTotal").value(0))
                 .andReturn());
 
-        mockMvc.perform(delete("/api/dictionaries/{id}", trackId))
+        mockMvc.perform(get("/api/projects"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items", hasSize(1)))
+                .andExpect(jsonPath("$.data.totalElements").value(1));
+
+        mockMvc.perform(delete("/api/dictionaries/{id}", trackId).with(csrf()))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value(40900));
 
-        mockMvc.perform(post("/api/progress")
+        mockMvc.perform(post("/api/progress").with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"projectId":%d,"logDate":"2026-08-18","content":"完成首次需求访谈"}
@@ -117,7 +149,7 @@ class ApiIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.content").value("完成首次需求访谈"));
 
-        mockMvc.perform(put("/api/revenues")
+        mockMvc.perform(put("/api/revenues").with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"entries":[
@@ -138,7 +170,7 @@ class ApiIntegrationTest {
                 .andExpect(jsonPath("$.data.total").value(200.0))
                 .andExpect(jsonPath("$.data.items[0].label").value("金融"));
 
-        mockMvc.perform(put("/api/projects/{id}", projectId)
+        mockMvc.perform(put("/api/projects/{id}", projectId).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -163,6 +195,7 @@ class ApiIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.progress", hasSize(1)))
                 .andExpect(jsonPath("$.data.revenues", hasSize(2)))
+                .andExpect(jsonPath("$.data.changeLogs[0].operator").value("测试管理员"))
                 .andExpect(jsonPath("$.data.changeLogs.length()").value(greaterThan(5)));
 
         String importPayload = """
@@ -182,21 +215,21 @@ class ApiIntegrationTest {
                 }
                 """;
 
-        mockMvc.perform(post("/api/import")
+        mockMvc.perform(post("/api/import").with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(importPayload.formatted(mappingId, true)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.dryRun").value(true))
                 .andExpect(jsonPath("$.data.added").value(1));
 
-        mockMvc.perform(post("/api/import")
+        mockMvc.perform(post("/api/import").with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(importPayload.formatted(mappingId, false)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.added").value(1))
                 .andExpect(jsonPath("$.data.details[0].projectId").isNumber());
 
-        mockMvc.perform(post("/api/export")
+        mockMvc.perform(post("/api/export").with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -214,7 +247,7 @@ class ApiIntegrationTest {
                 .andExpect(jsonPath("$.data.totalRows").value(2))
                 .andExpect(jsonPath("$.data.rows[0].revenueTotal").value(200.0));
 
-        mockMvc.perform(post("/api/export")
+        mockMvc.perform(post("/api/export").with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -233,15 +266,15 @@ class ApiIntegrationTest {
                 .andExpect(jsonPath("$.data.tables.projects", hasSize(2)))
                 .andExpect(jsonPath("$.data.tables.change_logs.length()").value(greaterThan(5)));
 
-        mockMvc.perform(delete("/api/projects/{id}", projectId))
+        mockMvc.perform(delete("/api/projects/{id}", projectId).with(csrf()))
                 .andExpect(status().isOk());
         mockMvc.perform(get("/api/projects/{id}/detail", projectId))
                 .andExpect(status().isNotFound());
-        mockMvc.perform(post("/api/projects/{id}/restore", projectId))
+        mockMvc.perform(post("/api/projects/{id}/restore", projectId).with(csrf()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.deleted").value(false));
 
-        mockMvc.perform(post("/api/import")
+        mockMvc.perform(post("/api/import").with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {

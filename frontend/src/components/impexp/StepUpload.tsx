@@ -5,7 +5,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { downloadImportSample, parseExcelFile } from './excel'
+import { downloadImportSample, MAX_IMPORT_FILE_BYTES, MAX_IMPORT_ROWS, parseExcelFile } from './excel'
 import type { ParsedSheet } from './excel'
 
 const PREVIEW_ROWS = 20
@@ -39,7 +39,10 @@ export function StepUpload({ parsed, onParsed, onNext }: Props) {
       <Card>
         <CardHeader>
           <CardTitle className="text-base">上传 Excel 文件</CardTitle>
-          <CardDescription>支持 .xlsx / .xls / .csv，仅读取第一个工作表，文件不会上传到服务器</CardDescription>
+          <CardDescription>
+            支持 .xlsx / .xls / .csv，最大 {MAX_IMPORT_FILE_BYTES / 1024 / 1024} MB、{MAX_IMPORT_ROWS} 行；
+            仅读取第一个工作表，文件不会上传到服务器
+          </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-wrap items-center gap-2">
           <input

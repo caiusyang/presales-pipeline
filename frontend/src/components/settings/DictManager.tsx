@@ -79,15 +79,31 @@ export function DictManager() {
     const idx = siblings.findIndex((r) => r.node.id === row.node.id)
     const other = siblings[idx + dir]
     if (!other) return
-    update.mutate({ id: row.node.id, input: { sortOrder: other.node.sortOrder } })
-    update.mutate({ id: other.node.id, input: { sortOrder: row.node.sortOrder } })
+    update.mutate({
+      id: row.node.id,
+      input: { type: row.node.type, value: row.node.value, parentId: row.node.parentId, sortOrder: other.node.sortOrder },
+    })
+    update.mutate({
+      id: other.node.id,
+      input: { type: other.node.type, value: other.node.value, parentId: other.node.parentId, sortOrder: row.node.sortOrder },
+    })
   }
 
   const handleRename = () => {
     if (!editing) return
     const value = editing.value.trim()
     if (!value) return
-    update.mutate({ id: editing.id, input: { value } })
+    const row = rows.find((item) => item.node.id === editing.id)
+    if (!row) return
+    update.mutate({
+      id: editing.id,
+      input: {
+        type: row.node.type,
+        value,
+        parentId: row.node.parentId,
+        sortOrder: row.node.sortOrder,
+      },
+    })
     setEditing(null)
   }
 

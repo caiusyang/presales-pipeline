@@ -2,7 +2,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { api } from '@/api'
 import type {
-  CustomFieldType,
   DictNode,
   ExportColumn,
   ExportScope,
@@ -13,6 +12,8 @@ import type {
   ValueRule,
 } from '@/types'
 import type {
+  CustomFieldInput,
+  DictionaryInput,
   ExportFilters,
   ImportRecordInput,
   ProjectListQuery,
@@ -142,13 +143,12 @@ export function useDictMutations() {
     qc.invalidateQueries({ queryKey: ['project-detail'] })
   }
   const create = useMutation({
-    mutationFn: (input: { type: string; value: string; parentId?: ID | null; sortOrder: number }) =>
-      api.createDictItem(input),
+    mutationFn: (input: DictionaryInput) => api.createDictItem(input),
     onSuccess: () => { invalidate(); toast.success('已新增字典项') },
     onError: onErr,
   })
   const update = useMutation({
-    mutationFn: ({ id, input }: { id: ID; input: Partial<{ value: string; parentId: ID | null; sortOrder: number }> }) =>
+    mutationFn: ({ id, input }: { id: ID; input: DictionaryInput }) =>
       api.updateDictItem(id, input),
     onSuccess: () => { invalidate(); toast.success('已保存（引用该值的项目已同步更新）') },
     onError: onErr,
@@ -230,19 +230,12 @@ export function useCustomFieldMutations() {
     qc.invalidateQueries({ queryKey: ['project-detail'] })
   }
   const create = useMutation({
-    mutationFn: (input: {
-      fieldKey: string
-      label: string
-      fieldType: CustomFieldType
-      required: boolean
-      options: string[]
-      sortOrder: number
-    }) => api.createCustomField(input),
+    mutationFn: (input: CustomFieldInput) => api.createCustomField(input),
     onSuccess: () => { invalidate(); toast.success('字段已创建') },
     onError: onErr,
   })
   const update = useMutation({
-    mutationFn: ({ id, input }: { id: ID; input: Partial<{ label: string; fieldType: CustomFieldType; required: boolean; options: string[]; sortOrder: number }> }) =>
+    mutationFn: ({ id, input }: { id: ID; input: CustomFieldInput }) =>
       api.updateCustomField(id, input),
     onSuccess: () => { invalidate(); toast.success('字段已保存') },
     onError: onErr,

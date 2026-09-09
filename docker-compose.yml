@@ -36,10 +36,13 @@ services:
       DB_URL: jdbc:mysql://mysql:3306/presales_pipeline?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false
       DB_USERNAME: presales
       DB_PASSWORD: ${MYSQL_PASSWORD:-presales_local_change_me_2026}
-      APP_OPERATOR: ${APP_OPERATOR:-我}
+      APP_AUTH_USERNAME: ${APP_AUTH_USERNAME:?请在 .env 中设置 APP_AUTH_USERNAME}
+      APP_AUTH_PASSWORD: ${APP_AUTH_PASSWORD:?请在 .env 中设置 APP_AUTH_PASSWORD}
+      APP_OPERATOR: ${APP_OPERATOR:-系统}
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
     ports:
-      - "${APP_BIND_ADDRESS:-0.0.0.0}:${APP_PORT:-8080}:8080"
+      - "${APP_BIND_ADDRESS:-127.0.0.1}:${APP_PORT:-8080}:8080"
     depends_on:
       mysql:
         condition: service_healthy
