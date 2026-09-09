@@ -48,6 +48,7 @@ management:
 
 app:
   security:
+    enabled: ${APP_AUTH_ENABLED:true}
     username: ${APP_AUTH_USERNAME}
     password: ${APP_AUTH_PASSWORD}
   operator:

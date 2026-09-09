@@ -26,6 +26,7 @@ interface ApiEnvelope<T> {
 export interface AuthUser {
   username: string
   roles: string[]
+  authenticationEnabled: boolean
 }
 
 interface CsrfInfo {
@@ -35,6 +36,7 @@ interface CsrfInfo {
 }
 
 let csrfRequest: Promise<CsrfInfo> | null = null
+let authenticationEnabled: boolean | null = null
 
 function notifyUnauthorized(): void {
   if (typeof window !== 'undefined') window.dispatchEvent(new Event('presales:unauthorized'))
@@ -79,7 +81,7 @@ function isUnsafeMethod(method?: string): boolean {
 export async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers)
   if (init?.body != null && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json')
-  if (isUnsafeMethod(init?.method)) {
+  if (isUnsafeMethod(init?.method) && authenticationEnabled !== false) {
     const csrf = await getCsrf()
     headers.set(csrf.headerName, csrf.token)
   }
@@ -87,7 +89,11 @@ export async function req<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const authApi = {
-  currentUser: () => req<AuthUser>('/auth/me'),
+  currentUser: async () => {
+    const user = await req<AuthUser>('/auth/me')
+    authenticationEnabled = user.authenticationEnabled
+    return user
+  },
   login: async (username: string, password: string) => {
     const csrf = await getCsrf()
     const body = new URLSearchParams({ username, password })
@@ -100,15 +106,18 @@ export const authApi = {
       body,
     })
     csrfRequest = null
+    authenticationEnabled = true
     return user
   },
   logout: async () => {
+    if (authenticationEnabled === false) return
     const csrf = await getCsrf()
     await bareReq<void>('/auth/logout', {
       method: 'POST',
       headers: { [csrf.headerName]: csrf.token },
     })
     csrfRequest = null
+    authenticationEnabled = null
   },
 }
 

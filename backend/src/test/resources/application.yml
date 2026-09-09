@@ -22,6 +22,7 @@ logging:
 
 app:
   security:
+    enabled: true
     username: test-admin
     password: test-password-2026
   operator:

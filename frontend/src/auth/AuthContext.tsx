@@ -14,7 +14,9 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | null>(null)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const mockUser = API_MODE === 'mock' ? { username: '演示用户', roles: ['ROLE_ADMIN'] } : null
+  const mockUser = API_MODE === 'mock'
+    ? { username: '演示用户', roles: ['ROLE_ADMIN'], authenticationEnabled: false }
+    : null
   const [status, setStatus] = useState<AuthStatus>(mockUser ? 'authenticated' : 'loading')
   const [user, setUser] = useState<AuthUser | null>(mockUser)
 

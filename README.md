@@ -79,7 +79,7 @@ Docker Compose 当前负责启动 MySQL、后端和自动备份服务；前端�
    cp .env.example .env
    ```
 
-2. 修改 `.env` 中的数据库密码及 `APP_AUTH_USERNAME`、`APP_AUTH_PASSWORD`。管理员密码至少 12 个字符；缺少登录配置时后端会拒绝启动。
+2. 修改 `.env` 中的数据库密码及 `APP_AUTH_USERNAME`、`APP_AUTH_PASSWORD`。管理员密码至少 12 个字符；缺少登录配置时后端会拒绝启动。仅限本机临时免登录时可设置 `APP_AUTH_ENABLED=false`，对外或内网共享前必须恢复为 `true`。
 
 3. 构建并启动。
 
@@ -125,6 +125,7 @@ docker compose up -d --build
 export DB_URL='jdbc:mysql://127.0.0.1:3306/presales_pipeline?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false'
 export DB_USERNAME='presales'
 export DB_PASSWORD='你的数据库密码'
+export APP_AUTH_ENABLED='true'
 export APP_AUTH_USERNAME='admin'
 export APP_AUTH_PASSWORD='至少十二个字符的独立密码'
 ```
@@ -210,7 +211,7 @@ docker compose start backend backup
 
 ## 登录与内网访问控制
 
-系统使用 `.env` 中的单管理员账号登录。Docker 默认只监听 `127.0.0.1`；如需改为内网共享，仍建议至少满足以下一项：
+系统默认使用 `.env` 中的单管理员账号登录。仅当服务绑定在本机地址时，可临时设置 `APP_AUTH_ENABLED=false` 免登录使用；对外或内网共享前必须恢复为 `true`。Docker 默认只监听 `127.0.0.1`；如需改为内网共享，仍建议至少满足以下一项：
 
 - 只部署在受控内网；
 - 将 `APP_BIND_ADDRESS` 设为 `127.0.0.1`，再由 nginx 暴露并限制来源 IP；

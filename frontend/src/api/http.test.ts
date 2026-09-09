@@ -55,4 +55,25 @@ describe('HTTP API contract', () => {
     expect(JSON.parse(String(customFieldInit.body))).toMatchObject({ fieldKey: 'stage', label: '项目阶段' })
     expect(new Headers(dictionaryInit.headers).get('X-XSRF-TOKEN')).toBe('csrf-token')
   })
+
+  it('skips login and CSRF when the backend declares local authentication disabled', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({
+        code: 0,
+        data: { username: '本地用户', roles: ['ROLE_ADMIN'], authenticationEnabled: false },
+      }))
+      .mockResolvedValueOnce(jsonResponse({ code: 0, data: { id: 1 } }))
+    vi.stubGlobal('fetch', fetchMock)
+    const { authApi, httpApi } = await import('./http')
+
+    const user = await authApi.currentUser()
+    await httpApi.updateDictItem(1, {
+      type: 'track', value: '数据安全', parentId: null, sortOrder: 20,
+    })
+
+    expect(user.authenticationEnabled).toBe(false)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(String(fetchMock.mock.calls[1][0])).toBe('/api/dictionaries/1')
+    expect(new Headers((fetchMock.mock.calls[1][1] as RequestInit).headers).has('X-CSRF-TOKEN')).toBe(false)
+  })
 })

@@ -48,7 +48,7 @@ export function AppLayout() {
         <div className="border-t p-3">
           <div className="mb-2 flex items-center justify-between gap-2 text-xs text-muted-foreground">
             <span className="truncate" title={user?.username}>{user?.username}</span>
-            {API_MODE === 'http' && (
+            {API_MODE === 'http' && user?.authenticationEnabled !== false && (
               <Button variant="ghost" size="icon-sm" aria-label="退出登录" onClick={() => void logout()}>
                 <LogOut className="h-3.5 w-3.5" />
               </Button>

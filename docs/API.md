@@ -1,6 +1,6 @@
 # API 联调契约
 
-基础地址：`/api`。所有响应均为 `{code, message, data}`。除获取 CSRF 令牌和登录外，业务接口均要求已登录的服务端会话；所有 POST、PUT、PATCH、DELETE 请求需要提交 CSRF 请求头。
+基础地址：`/api`。所有响应均为 `{code, message, data}`。默认情况下，除获取 CSRF 令牌和登录外，业务接口均要求已登录的服务端会话；所有 POST、PUT、PATCH、DELETE 请求需要提交 CSRF 请求头。仅本机运行可通过 `APP_AUTH_ENABLED=false` 临时关闭登录和 CSRF，禁止在对外或内网共享时使用该设置。
 
 ## 登录
 

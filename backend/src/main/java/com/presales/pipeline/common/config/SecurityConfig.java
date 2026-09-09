@@ -40,7 +40,23 @@ public class SecurityConfig {
     }
 
     @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http, ObjectMapper objectMapper) throws Exception {
+    public SecurityFilterChain securityFilterChain(HttpSecurity http,
+                                                   ObjectMapper objectMapper,
+                                                   AuthProperties properties) throws Exception {
+        if (!properties.enabled()) {
+            http
+                    .cors(Customizer.withDefaults())
+                    .csrf(csrf -> csrf.disable())
+                    .authorizeHttpRequests(authorize -> authorize.anyRequest().permitAll())
+                    .anonymous(anonymous -> anonymous
+                            .principal("本地用户")
+                            .authorities("ROLE_ADMIN"))
+                    .formLogin(form -> form.disable())
+                    .logout(logout -> logout.disable())
+                    .requestCache(cache -> cache.disable());
+            return http.build();
+        }
+
         HttpSessionCsrfTokenRepository csrfRepository = new HttpSessionCsrfTokenRepository();
 
         http
