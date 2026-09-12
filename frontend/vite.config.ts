@@ -11,7 +11,7 @@ export default defineConfig({
     port: 5173,
     proxy: {
       // 联调真实后端时：VITE_API_MODE=http，/api 代理到 Spring Boot
-      '/api': { target: 'http://localhost:8080', changeOrigin: true },
+      '/api': { target: 'http://127.0.0.1:8080', changeOrigin: true },
     },
   },
   build: {

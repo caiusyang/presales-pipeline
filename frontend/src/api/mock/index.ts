@@ -35,7 +35,8 @@ import { seedDB, type MockDB } from './seed'
 // 字典树级联删除保护 / 收入汇总 / SQL 式聚合），localStorage 持久化。
 // ============================================================
 
-const STORAGE_KEY = 'presales-pipeline-mock-v2'
+// 修改种子结构时提升版本，避免旧 localStorage 让演示页面继续显示过时数据。
+const STORAGE_KEY = 'presales-pipeline-mock-v3'
 const LATENCY = 120
 
 let db: MockDB = load()

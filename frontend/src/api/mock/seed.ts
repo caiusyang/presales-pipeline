@@ -8,7 +8,8 @@ import type {
   Project,
   Revenue,
 } from '@/types'
-import { PRODUCT_CATALOG } from '@/lib/products'
+import { PROJECT_STATUSES } from '@/types'
+import { PRODUCT_CATALOG, type ProductCode } from '@/lib/products'
 
 // ============================================================
 // Mock 种子数据：字典 / 自定义字段 / 模板 / 项目及其收入、进展
@@ -37,8 +38,59 @@ const INDUSTRIES: [string, string[]][] = [
   ['交通物流', ['航空', '港口', '快递快运']],
 ]
 
-const TRACKS = ['信创替代', '云原生', '大数据', '人工智能', '安全', '数字化转型']
-const SOLUTIONS = ['分布式数据库', '中间件', '云平台', '数据仓库', 'BI 报表', '零信任安全', '大模型平台', '容灾备份']
+const TRACKS = ['云安全', '网络安全', '数据安全', '终端安全', '安全运营', 'AI 安全']
+
+interface SolutionCatalogItem {
+  name: string
+  subSolutions: Array<{
+    name: string
+    products: readonly ProductCode[]
+  }>
+}
+
+// 演示用关联关系；在“配置”页面仍可自行增删调整。
+const SOLUTION_CATALOG: SolutionCatalogItem[] = [
+  {
+    name: '云与边界安全',
+    subSolutions: [
+      { name: 'DDoS 与应用防护', products: ['AAD', 'WAF', 'ESA'] },
+      { name: '云网络安全', products: ['CFW'] },
+    ],
+  },
+  {
+    name: '云工作负载安全',
+    subSolutions: [
+      { name: '主机与容器防护', products: ['HSS'] },
+      { name: '网络检测与响应', products: ['NDR'] },
+    ],
+  },
+  {
+    name: '数据安全治理',
+    subSolutions: [
+      { name: '数据分类分级与保护', products: ['DEW', 'DSC'] },
+      { name: '数据库审计', products: ['DBSS'] },
+    ],
+  },
+  {
+    name: '安全运营',
+    subSolutions: [
+      { name: '安全运营平台', products: ['SecMaster', 'NDR'] },
+      { name: '安全运营服务', products: ['安全运营专业服务'] },
+    ],
+  },
+  {
+    name: '身份与运维安全',
+    subSolutions: [
+      { name: '特权访问管理', products: ['CBH'] },
+    ],
+  },
+  {
+    name: 'AI 安全',
+    subSolutions: [
+      { name: '大模型与智能体防护', products: ['大模型防火墙', '智能体卫士'] },
+    ],
+  },
+]
 
 const CUSTOMERS: [string, string, string][] = [
   ['华信银行', '金融', '银行'],
@@ -60,16 +112,16 @@ const CUSTOMERS: [string, string, string][] = [
 ]
 
 const PROJECT_SUFFIX = [
-  '核心系统信创改造',
-  '数据中台建设',
-  '私有云平台扩容',
-  '大模型智能客服',
-  '零信任安全体系',
-  '经营分析 BI 平台',
-  '数据仓库升级',
-  '中间件国产化替换',
-  '容灾双活建设',
-  '数字化营销平台',
+  '云边界安全建设',
+  '主机安全能力提升',
+  '数据安全治理',
+  '安全运营中心建设',
+  '零信任接入改造',
+  '大模型安全防护',
+  'DDoS 防护扩容',
+  '数据库审计建设',
+  '堡垒机升级',
+  '安全运营专业服务',
 ]
 
 const PROGRESS_TEXTS = [
@@ -112,18 +164,26 @@ export function seedDB(): MockDB {
       dictionaries.push({ id: seq++, type: 'sub_industry', value: s, parentId: pid, sortOrder: (i + 1) * 10 }),
     )
   }
-  SOLUTIONS.forEach((s, i) => {
+  SOLUTION_CATALOG.forEach((solution, i) => {
     const solutionId = seq++
-    dictionaries.push({ id: solutionId, type: 'solution', value: s, parentId: null, sortOrder: (i + 1) * 10 })
-    const subId = seq++
-    dictionaries.push({ id: subId, type: 'sub_solution', value: `${s}标准方案`, parentId: solutionId, sortOrder: 10 })
-    PRODUCT_CATALOG.forEach((product, productIndex) => {
+    dictionaries.push({ id: solutionId, type: 'solution', value: solution.name, parentId: null, sortOrder: (i + 1) * 10 })
+    solution.subSolutions.forEach((subSolution, subIndex) => {
+      const subId = seq++
       dictionaries.push({
-        id: seq++,
-        type: 'product',
-        value: product,
-        parentId: subId,
-        sortOrder: (productIndex + 1) * 10,
+        id: subId,
+        type: 'sub_solution',
+        value: subSolution.name,
+        parentId: solutionId,
+        sortOrder: (subIndex + 1) * 10,
+      })
+      subSolution.products.forEach((product, productIndex) => {
+        dictionaries.push({
+          id: seq++,
+          type: 'product',
+          value: product,
+          parentId: subId,
+          sortOrder: (productIndex + 1) * 10,
+        })
       })
     })
   })
@@ -150,24 +210,31 @@ export function seedDB(): MockDB {
       const id = seq++
       const suffix = PROJECT_SUFFIX[(ci + k * 3) % PROJECT_SUFFIX.length]
       const track = TRACKS[Math.floor(rand() * TRACKS.length)]
-      const solution = SOLUTIONS[Math.floor(rand() * SOLUTIONS.length)]
+      const catalog = SOLUTION_CATALOG[(ci + k) % SOLUTION_CATALOG.length]
+      const subCatalog = catalog.subSolutions[(ci + k) % catalog.subSolutions.length]
+      const projectStatus = PROJECT_STATUSES[(ci + k) % PROJECT_STATUSES.length]
+      const hasSolution = projectStatus !== '机会点识别'
+      const hasSubSolution = projectStatus === '方案设计' || projectStatus === '中标'
+      const purchasedProducts = projectStatus === '中标'
+        ? subCatalog.products.slice(0, Math.min(subCatalog.products.length, 1 + ((ci + k) % 2)))
+        : []
       const created = `2026-0${1 + Math.floor(rand() * 7)}-1${Math.floor(rand() * 9)}T08:00:00`
       projects.push({
         id,
         externalId: rand() > 0.4 ? `EXT-${1000 + ci * 10 + k}` : null,
         customerName: customer,
         projectName: `${customer}${suffix}${k > 0 ? '（二期）' : ''}`,
-        projectStatus: '机会点识别',
-        safetySpace: rand() > 0.5 ? '预算内' : '待确认',
-        solution,
-        subSolution: '',
-        purchasedProducts: [],
+        projectStatus,
+        safetySpace: ['网络边界', '云工作负载', '数据安全', '安全运营', 'AI 安全'][(ci + k) % 5],
+        solution: hasSolution ? catalog.name : '',
+        subSolution: hasSubSolution ? subCatalog.name : '',
+        purchasedProducts: [...purchasedProducts],
         track,
         industry,
         subIndustry,
-        scenario: `${customer}现有系统面临性能瓶颈，拟通过${solution}实现${track}目标。`,
-        keyNeeds: '高可用、平滑迁移、原厂服务能力',
-        keyRisks: rand() > 0.5 ? '预算收紧，决策链长' : '竞争激烈，需差异化方案',
+        scenario: `${customer}正在推进${catalog.name}建设，需要结合现网完成风险收敛。`,
+        keyNeeds: '兼容现网架构、快速交付、持续运营与原厂服务能力',
+        keyRisks: rand() > 0.5 ? '预算收紧，决策链较长' : '竞争激烈，需要强化方案差异化',
         customFields: {
           expected_sign_date: `2026-${String(1 + Math.floor(rand() * 12)).padStart(2, '0')}-15`,
           budget: Math.round(rand() * 900 + 50),
@@ -223,7 +290,11 @@ export function seedDB(): MockDB {
         项目: 'projectName',
         行业: 'industry',
         赛道: 'track',
+        状态: 'projectStatus',
         方案: 'solution',
+        细分方案: 'subSolution',
+        WAF已购: 'product:WAF',
+        HSS已购: 'product:HSS',
         进展: 'progressText',
       },
       valueRules: [
@@ -241,10 +312,13 @@ export function seedDB(): MockDB {
       columns: [
         { key: 'customerName', title: '客户名称' },
         { key: 'projectName', title: '项目名称' },
+        { key: 'projectStatus', title: '项目状态' },
         { key: 'industry', title: '行业' },
         { key: 'subIndustry', title: '子行业' },
         { key: 'track', title: '赛道' },
         { key: 'solution', title: '解决方案' },
+        { key: 'subSolution', title: '细分解决方案' },
+        { key: 'purchasedProducts', title: '已购产品' },
         { key: 'revenueTotal', title: '累计收入(万元)' },
         { key: 'keyRisks', title: '关键风险' },
       ],
