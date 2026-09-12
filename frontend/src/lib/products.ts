@@ -9,6 +9,11 @@ export const PRODUCT_CATALOG = [
   'DEW',
   'DSC',
   'SecMaster',
+  'DBSS',
+  'CBH',
+  '安全运营专业服务',
+  '大模型防火墙',
+  '智能体卫士',
 ] as const
 
 export type ProductCode = (typeof PRODUCT_CATALOG)[number]

@@ -82,6 +82,21 @@ describe('Excel 自动字段映射', () => {
     expect(output.records[1].fields.purchasedProducts).toEqual(['WAF'])
   })
 
+  it('新增的中英文产品列均能自动识别', () => {
+    const headers = ['DBSS', 'CBH', '安全运营专业服务', '大模型防火墙', '智能体卫士']
+    const targets = autoMapColumns(headers, [['1', '是', '已有', '√', '开通']], [])
+
+    expect(targets.map((target) => target.product)).toEqual(headers)
+    const output = buildImportRecords({
+      headers,
+      rows: [['1', '是', '已有', '√', '开通']],
+      columnMap: buildColumnMap(headers, targets),
+      valueRules: [],
+      today: '2026-09-12',
+    })
+    expect(output.records[0].fields.purchasedProducts).toEqual(headers)
+  })
+
   it('全列内容必须一致符合类型才推断为数字或日期', () => {
     expect(inferColumnType(['1', '2,000.50', '-3'])).toBe('number')
     expect(inferColumnType(['2026-09-12', '2026/9/13'])).toBe('date')

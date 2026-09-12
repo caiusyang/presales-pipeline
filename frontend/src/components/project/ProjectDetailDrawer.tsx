@@ -126,7 +126,7 @@ function ProductsTab({ records }: { records: ProjectProductRecord[] }) {
   return (
     <div className="space-y-3">
       <div className="text-sm text-muted-foreground">
-        产品目录固定为 9 项。已购产品会在项目产品关系表中保存独立记录。
+        产品目录固定为 {PRODUCT_CATALOG.length} 项。已购产品会在项目产品关系表中保存独立记录。
       </div>
       <div className="overflow-hidden rounded-md border">
         <Table>

@@ -41,6 +41,11 @@ const PRODUCT_ALIASES: Record<ProductCode, string[]> = {
   DEW: ['DEW'],
   DSC: ['DSC', '数据分类分级'],
   SecMaster: ['SecMaster', '安全云脑'],
+  DBSS: ['DBSS'],
+  CBH: ['CBH'],
+  安全运营专业服务: ['安全运营专业服务'],
+  大模型防火墙: ['大模型防火墙'],
+  智能体卫士: ['智能体卫士'],
 }
 
 function productFromHeader(header: string): ProductCode | null {

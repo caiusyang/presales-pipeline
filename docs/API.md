@@ -54,7 +54,7 @@
 }
 ```
 
-`projectStatus` 仅支持 `机会点识别`、`方案引导`、`方案设计`、`中标`，省略时默认为`机会点识别`。状态为`中标`时，`solution`、`subSolution` 和至少一个 `purchasedProducts` 必填；状态回退时这些信息会保留。产品编码固定为 `AAD`、`WAF`、`CFW`、`ESA`、`HSS`、`NDR`、`DEW`、`DSC`、`SecMaster`。
+`projectStatus` 仅支持 `机会点识别`、`方案引导`、`方案设计`、`中标`，省略时默认为`机会点识别`。状态为`中标`时，`solution`、`subSolution` 和至少一个 `purchasedProducts` 必填；状态回退时这些信息会保留。产品编码固定为 `AAD`、`WAF`、`CFW`、`ESA`、`HSS`、`NDR`、`DEW`、`DSC`、`SecMaster`、`DBSS`、`CBH`、`安全运营专业服务`、`大模型防火墙`、`智能体卫士`。
 
 ### `GET /api/projects/{id}/detail`
 

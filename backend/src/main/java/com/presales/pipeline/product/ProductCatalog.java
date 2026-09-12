@@ -9,7 +9,8 @@ import java.util.List;
 public final class ProductCatalog {
 
     public static final List<String> CODES = List.of(
-            "AAD", "WAF", "CFW", "ESA", "HSS", "NDR", "DEW", "DSC", "SecMaster"
+            "AAD", "WAF", "CFW", "ESA", "HSS", "NDR", "DEW", "DSC", "SecMaster",
+            "DBSS", "CBH", "安全运营专业服务", "大模型防火墙", "智能体卫士"
     );
 
     private ProductCatalog() {
