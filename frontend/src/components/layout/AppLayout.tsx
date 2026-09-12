@@ -1,5 +1,5 @@
 import { NavLink, Outlet } from 'react-router-dom'
-import { LayoutGrid, BarChart3, Upload, Download, Settings, DatabaseZap, LogOut } from 'lucide-react'
+import { LayoutGrid, BarChart3, Upload, Download, Settings, DatabaseZap, LogOut, Users } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { API_MODE } from '@/api'
 import { Badge } from '@/components/ui/badge'
@@ -8,6 +8,7 @@ import { useAuth } from '@/auth/AuthContext'
 
 const NAV = [
   { to: '/', label: '项目管道', icon: LayoutGrid, end: true },
+  { to: '/customers', label: '客户分析', icon: Users },
   { to: '/revenue', label: '收入统计', icon: BarChart3 },
   { to: '/import', label: '导入', icon: Upload },
   { to: '/export', label: '导出', icon: Download },

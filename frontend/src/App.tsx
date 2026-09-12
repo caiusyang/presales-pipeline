@@ -7,6 +7,7 @@ import LoginPage from '@/pages/LoginPage'
 
 // 路由级懒加载：echarts/xlsx 等大依赖随页面分包
 const PipelinePage = lazy(() => import('@/pages/PipelinePage'))
+const CustomerPage = lazy(() => import('@/pages/CustomerPage'))
 const RevenuePage = lazy(() => import('@/pages/RevenuePage'))
 const ImportPage = lazy(() => import('@/pages/ImportPage'))
 const ExportPage = lazy(() => import('@/pages/ExportPage'))
@@ -29,6 +30,7 @@ function AuthenticatedApp() {
     <Routes>
       <Route element={<AppLayout />}>
         <Route path="/" element={<Suspense fallback={<PageLoading />}><PipelinePage /></Suspense>} />
+        <Route path="/customers" element={<Suspense fallback={<PageLoading />}><CustomerPage /></Suspense>} />
         <Route path="/revenue" element={<Suspense fallback={<PageLoading />}><RevenuePage /></Suspense>} />
         <Route path="/import" element={<Suspense fallback={<PageLoading />}><ImportPage /></Suspense>} />
         <Route path="/export" element={<Suspense fallback={<PageLoading />}><ExportPage /></Suspense>} />

@@ -29,6 +29,7 @@ import type {
 
 export const qk = {
   projects: (q: ProjectListQuery) => ['projects', q] as const,
+  customers: (keyword: string) => ['customers', keyword] as const,
   projectDetail: (id: ID) => ['project-detail', id] as const,
   revenueMatrix: (params: RevenueMatrixParams) => ['revenue-matrix', params] as const,
   stats: (dim: StatsDim, year?: number) => ['stats', dim, year] as const,
@@ -54,10 +55,15 @@ export function useProjectDetail(id: ID | null) {
   })
 }
 
+export function useCustomers(keyword: string) {
+  return useQuery({ queryKey: qk.customers(keyword), queryFn: () => api.listCustomers(keyword || undefined) })
+}
+
 export function useProjectMutations() {
   const qc = useQueryClient()
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ['projects'] })
+    qc.invalidateQueries({ queryKey: ['customers'] })
     qc.invalidateQueries({ queryKey: ['project-detail'] })
     qc.invalidateQueries({ queryKey: ['revenue-matrix'] })
     qc.invalidateQueries({ queryKey: ['stats'] })
@@ -119,6 +125,7 @@ export function useSaveRevenues() {
       qc.invalidateQueries({ queryKey: ['projects'] })
       qc.invalidateQueries({ queryKey: ['stats'] })
       qc.invalidateQueries({ queryKey: ['project-detail'] })
+      qc.invalidateQueries({ queryKey: ['customers'] })
       toast.success(`收入已保存：新增 ${r.created} / 更新 ${r.updated} / 清空 ${r.cleared}`)
     },
     onError: onErr,
@@ -142,6 +149,7 @@ export function useDictMutations() {
     qc.invalidateQueries({ queryKey: ['dicts'] })
     qc.invalidateQueries({ queryKey: ['projects'] }) // 改名会同步项目引用
     qc.invalidateQueries({ queryKey: ['project-detail'] })
+    qc.invalidateQueries({ queryKey: ['customers'] })
   }
   const create = useMutation({
     mutationFn: (input: DictionaryInput) => api.createDictItem(input),

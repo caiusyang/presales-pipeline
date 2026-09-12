@@ -68,6 +68,52 @@
 
 恢复项目；若已存在同客户同名活动项目则返回 409。
 
+## 客户分析
+
+### `GET /api/customers`
+
+按客户名称汇总所有活动项目。可传 `keyword` 搜索客户名称、项目名称、项目外部编号或已购产品。客户名称匹配不区分大小写，软删除项目不参与统计。
+
+```json
+{
+  "code": 0,
+  "message": "成功",
+  "data": [
+    {
+      "customerName": "示例客户",
+      "projectCount": 2,
+      "wonProjectCount": 1,
+      "statusCounts": {
+        "机会点识别": 0,
+        "方案引导": 1,
+        "方案设计": 0,
+        "中标": 1
+      },
+      "purchasedProducts": ["WAF", "HSS"],
+      "revenueTotal": 320.00,
+      "updatedAt": "2026-09-13T10:30:00",
+      "projects": [
+        {
+          "id": 1,
+          "externalId": "CRM-001",
+          "projectName": "云安全建设",
+          "projectStatus": "中标",
+          "industry": "金融",
+          "track": "云安全",
+          "solution": "云安全解决方案",
+          "subSolution": "边界安全",
+          "purchasedProducts": ["WAF", "HSS"],
+          "revenueTotal": 320.00,
+          "updatedAt": "2026-09-13T10:30:00"
+        }
+      ]
+    }
+  ]
+}
+```
+
+客户按累计收入降序排列，已购产品在客户下跨项目去重；`projects` 按最近更新时间降序排列。
+
 ## 进展
 
 - `GET /api/progress?projectId={id}`：项目时间线；不传项目 ID 时返回全部活动项目进展。

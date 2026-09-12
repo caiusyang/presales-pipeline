@@ -12,6 +12,7 @@ import type {
 } from '@/types'
 import type {
   ApiClient,
+  CustomerAnalysis,
   ExportFieldOption,
   ExportResult,
   ImportRecordInput,
@@ -269,6 +270,61 @@ export const mockApi: ApiClient = {
       p.deleted = false
       p.updatedAt = now()
       persist()
+    })
+  },
+
+  // ---------------- 客户分析 ----------------
+  listCustomers(keyword) {
+    return delay(() => {
+      const groups = new Map<string, Project[]>()
+      for (const project of db.projects.filter(alive)) {
+        const key = project.customerName.toLowerCase()
+        groups.set(key, [...(groups.get(key) ?? []), project])
+      }
+      const needle = norm(keyword).toLowerCase()
+      return [...groups.values()]
+        .map((projects): CustomerAnalysis => {
+          const customerName = projects[0].customerName
+          const products = PRODUCT_CATALOG.filter((product) =>
+            projects.some((project) => project.purchasedProducts.includes(product)))
+          const statusCounts = Object.fromEntries(
+            ['机会点识别', '方案引导', '方案设计', '中标'].map((status) => [
+              status,
+              projects.filter((project) => project.projectStatus === status).length,
+            ]),
+          )
+          const summaries = projects
+            .map((project) => ({
+              id: project.id,
+              externalId: project.externalId,
+              projectName: project.projectName,
+              projectStatus: project.projectStatus,
+              industry: project.industry,
+              track: project.track,
+              solution: project.solution,
+              subSolution: project.subSolution,
+              purchasedProducts: project.purchasedProducts,
+              revenueTotal: revenueTotalOf(project.id),
+              updatedAt: project.updatedAt,
+            }))
+            .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+          return {
+            customerName,
+            projectCount: projects.length,
+            wonProjectCount: statusCounts.中标,
+            statusCounts,
+            purchasedProducts: products,
+            revenueTotal: round2(summaries.reduce((sum, project) => sum + project.revenueTotal, 0)),
+            updatedAt: summaries[0].updatedAt,
+            projects: summaries,
+          }
+        })
+        .filter((customer) => !needle
+          || customer.customerName.toLowerCase().includes(needle)
+          || customer.purchasedProducts.some((product) => product.toLowerCase().includes(needle))
+          || customer.projects.some((project) => project.projectName.toLowerCase().includes(needle)
+            || (project.externalId ?? '').toLowerCase().includes(needle)))
+        .sort((a, b) => b.revenueTotal - a.revenueTotal || a.customerName.localeCompare(b.customerName, 'zh'))
     })
   },
 

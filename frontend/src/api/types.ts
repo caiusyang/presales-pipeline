@@ -53,6 +53,32 @@ export interface ProjectDetail {
   changeLogs: ChangeLog[]
 }
 
+// ---------- 客户分析 ----------
+export interface CustomerProjectSummary {
+  id: ID
+  externalId: string | null
+  projectName: string
+  projectStatus: string
+  industry: string
+  track: string
+  solution: string
+  subSolution: string
+  purchasedProducts: string[]
+  revenueTotal: number
+  updatedAt: string
+}
+
+export interface CustomerAnalysis {
+  customerName: string
+  projectCount: number
+  wonProjectCount: number
+  statusCounts: Record<string, number>
+  purchasedProducts: string[]
+  revenueTotal: number
+  updatedAt: string
+  projects: CustomerProjectSummary[]
+}
+
 // ---------- 收入 ----------
 export interface RevenueMatrixParams {
   year?: number
@@ -190,6 +216,9 @@ export interface ApiClient {
   deleteProject(id: ID): Promise<void>
   /** 回收站恢复 */
   restoreProject(id: ID): Promise<void>
+
+  // 客户分析
+  listCustomers(keyword?: string): Promise<CustomerAnalysis[]>
 
   // 进展
   addProgress(input: { projectId: ID; logDate: string; content: string }): Promise<ProgressLog>

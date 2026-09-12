@@ -78,6 +78,55 @@ class ProjectWinningIntegrationTest {
                 .andExpect(jsonPath("$.data.products[1].productCode").value("WAF"))
                 .andExpect(jsonPath("$.data.products[2].productCode").value("DBSS"));
 
+        long secondProjectId = dataId(mockMvc.perform(post("/api/projects").with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "customerName":"中标测试客户",
+                                  "projectName":"客户补充项目",
+                                  "projectStatus":"机会点识别",
+                                  "purchasedProducts":[],
+                                  "customFields":{}
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andReturn());
+
+        mockMvc.perform(put("/api/revenues").with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "entries":[
+                                    {"projectId":%d,"month":"2026-09","amount":120.50},
+                                    {"projectId":%d,"month":"2026-09","amount":80.00}
+                                  ]
+                                }
+                                """.formatted(projectId, secondProjectId)))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/customers").param("keyword", "中标测试客户"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.length()").value(1))
+                .andExpect(jsonPath("$.data[0].customerName").value("中标测试客户"))
+                .andExpect(jsonPath("$.data[0].projectCount").value(2))
+                .andExpect(jsonPath("$.data[0].wonProjectCount").value(0))
+                .andExpect(jsonPath("$.data[0].statusCounts.方案设计").value(1))
+                .andExpect(jsonPath("$.data[0].statusCounts.机会点识别").value(1))
+                .andExpect(jsonPath("$.data[0].purchasedProducts.length()").value(3))
+                .andExpect(jsonPath("$.data[0].purchasedProducts[0]").value("AAD"))
+                .andExpect(jsonPath("$.data[0].purchasedProducts[1]").value("WAF"))
+                .andExpect(jsonPath("$.data[0].purchasedProducts[2]").value("DBSS"))
+                .andExpect(jsonPath("$.data[0].revenueTotal").value(200.50))
+                .andExpect(jsonPath("$.data[0].projects.length()").value(2));
+
+        mockMvc.perform(get("/api/customers").param("keyword", "DBSS"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.length()").value(1));
+
+        mockMvc.perform(get("/api/customers").param("keyword", "不存在的客户"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.length()").value(0));
+
         mockMvc.perform(post("/api/dictionaries").with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(

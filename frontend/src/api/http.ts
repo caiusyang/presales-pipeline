@@ -1,5 +1,5 @@
 import type { Paged, Project } from '@/types'
-import type { ApiClient, ExportResult, ImportResult, ProjectListQuery, RevenueMatrix, RevenueStats } from './types'
+import type { ApiClient, CustomerAnalysis, ExportResult, ImportResult, ProjectListQuery, RevenueMatrix, RevenueStats } from './types'
 
 // ============================================================
 // HTTP 实现：对接真实 Spring Boot 后端（/api，响应 {code, message, data}）
@@ -167,6 +167,16 @@ export const httpApi: ApiClient = {
   updateProject: (id, input) => req(`/projects/${id}`, { method: 'PUT', body: JSON.stringify(input) }),
   deleteProject: (id) => req(`/projects/${id}`, { method: 'DELETE' }),
   restoreProject: (id) => req(`/projects/${id}/restore`, { method: 'POST' }),
+
+  // ---------------- 客户分析 ----------------
+  listCustomers: async (keyword) => {
+    const customers = await req<CustomerAnalysis[]>(`/customers${qs({ keyword })}`)
+    return customers.map((customer) => ({
+      ...customer,
+      revenueTotal: num(customer.revenueTotal),
+      projects: customer.projects.map((project) => ({ ...project, revenueTotal: num(project.revenueTotal) })),
+    }))
+  },
 
   // ---------------- 进展 ----------------
   addProgress: (input) => req('/progress', { method: 'POST', body: JSON.stringify(input) }),
