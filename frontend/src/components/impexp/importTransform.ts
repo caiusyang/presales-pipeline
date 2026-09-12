@@ -140,9 +140,11 @@ export interface TransformParams {
   valueRules: ValueRule[]
   /** 进展无日期时的兜底日期（今天，YYYY-MM-DD） */
   today: string
+  /** 第一条数据在原 Excel 中的 1-based 行号 */
+  dataStartRow?: number
 }
 
-export function buildImportRecords({ headers, rows, columnMap, valueRules, today }: TransformParams): TransformOutput {
+export function buildImportRecords({ headers, rows, columnMap, valueRules, today, dataStartRow = 2 }: TransformParams): TransformOutput {
   // 列名 → 列下标（重名取第一个）
   const colIndex = new Map<string, number>()
   headers.forEach((h, i) => {
@@ -159,7 +161,7 @@ export function buildImportRecords({ headers, rows, columnMap, valueRules, today
   const records: ImportRecordInput[] = []
 
   rows.forEach((row, r) => {
-    const excelRow = r + 2 // 表头第 1 行
+    const excelRow = r + dataStartRow
     const fields: Record<string, unknown> = { customFields: {} }
     const customFields = fields.customFields as Record<string, unknown>
     const revenues: { month: MonthStr; amount: number }[] = []

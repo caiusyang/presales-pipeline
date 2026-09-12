@@ -26,7 +26,7 @@ export function StepUpload({ parsed, onParsed, onNext }: Props) {
     try {
       const p = await parseExcelFile(file)
       onParsed(p)
-      toast.success(`解析成功：${p.sheetName}，共 ${p.totalRows} 行数据`)
+      toast.success(`解析成功：${p.sheetName}，识别 ${p.headerRows} 行表头、${p.totalRows} 行数据`)
     } catch (e) {
       toast.error(`解析失败：${(e as Error).message || '无法读取该文件'}`)
     } finally {
@@ -66,6 +66,7 @@ export function StepUpload({ parsed, onParsed, onNext }: Props) {
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <FileSpreadsheet className="h-4 w-4" />
               工作表 <Badge variant="secondary">{parsed.sheetName}</Badge>
+              表头行 <Badge variant="secondary">{parsed.headerRows}</Badge>
               数据行 <Badge variant="secondary">{parsed.totalRows}</Badge>
             </div>
           )}
@@ -76,7 +77,9 @@ export function StepUpload({ parsed, onParsed, onNext }: Props) {
         <Card>
           <CardHeader>
             <CardTitle className="text-base">数据预览</CardTitle>
-            <CardDescription>仅预览前 {PREVIEW_ROWS} 行，第 1 行为表头</CardDescription>
+            <CardDescription>
+              已按合并关系识别 {parsed.headerRows} 行表头；仅预览前 {PREVIEW_ROWS} 行数据
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="max-h-96 overflow-auto rounded-md border">

@@ -34,6 +34,7 @@ export function StepConfirm({ parsed, columnMap, valueRules, mappingId, onBack, 
         columnMap,
         valueRules,
         today,
+        dataStartRow: parsed.dataStartRow,
       }),
     [parsed, columnMap, valueRules, today],
   )

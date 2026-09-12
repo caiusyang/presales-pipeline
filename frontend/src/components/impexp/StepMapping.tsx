@@ -81,7 +81,8 @@ export function StepMapping({
   const monthInvalid = (t: ColumnTarget) => t.target === REVENUE_SENTINEL && !isValidMonth(t.month)
   const hasInvalidMonth = targets.some(monthInvalid)
   const hasAnyMapping = targets.some((t) => effectiveTarget(t) != null)
-  const canNext = hasAnyMapping && !hasInvalidMonth
+  const hasDataRows = parsed.totalRows > 0
+  const canNext = hasAnyMapping && !hasInvalidMonth && hasDataRows
 
   const setTarget = (i: number, t: ColumnTarget) => onTargetsChange(targets.map((old, j) => (j === i ? t : old)))
 
@@ -118,6 +119,17 @@ export function StepMapping({
 
   return (
     <div className="space-y-4">
+      {!hasDataRows && (
+        <Card className="border-amber-300 bg-amber-50/60">
+          <CardContent className="flex items-start gap-2 pt-4 text-sm text-amber-800 sm:pt-5">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            <div>
+              当前文件只有表头，没有可导入的数据行。你可以在这里检查并保存映射方案；正式导入时请重新选择包含数据的完整表格。
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       <Card>
         <CardHeader>
           <CardTitle className="text-base">映射方案</CardTitle>
