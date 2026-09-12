@@ -36,7 +36,7 @@ import { seedDB, type MockDB } from './seed'
 // ============================================================
 
 // 修改种子结构时提升版本，避免旧 localStorage 让演示页面继续显示过时数据。
-const STORAGE_KEY = 'presales-pipeline-mock-v3'
+const STORAGE_KEY = 'presales-pipeline-mock-v4'
 const LATENCY = 120
 
 let db: MockDB = load()
@@ -773,6 +773,35 @@ export const mockApi: ApiClient = {
   // ---------------- 导出 ----------------
   getExportFields(scope) {
     return delay(() => {
+      if (scope === 'combined') {
+        const base: ExportFieldOption[] = [
+          { key: 'id', title: '项目ID' },
+          ...Object.entries(PROJECT_FIELD_LABELS)
+            .filter(([key]) => key !== 'progressText' && key !== 'revenueTotal')
+            .map(([key, title]) => ({ key, title })),
+        ]
+        const activeProjectIds = new Set(db.projects.filter(alive).map((project) => project.id))
+        const revenueMonths = [...new Set(db.revenues
+          .filter((revenue) => activeProjectIds.has(revenue.projectId))
+          .map((revenue) => revenue.month))].sort()
+        const revenues = revenueMonths.map((month) => ({
+          key: `revenue.${month}`,
+          title: `${month}收入（万元）`,
+        }))
+        const custom = db.customFieldDefs.map((definition) => ({
+          key: `custom.${definition.fieldKey}`,
+          title: definition.label,
+        }))
+        return [
+          ...base,
+          ...revenues,
+          { key: 'revenueTotal', title: '收入合计（万元）' },
+          { key: 'progressSummary', title: '进展日志（日期：内容）' },
+          { key: 'createdAt', title: '创建时间' },
+          { key: 'updatedAt', title: '更新时间' },
+          ...custom,
+        ]
+      }
       if (scope === 'projects') {
         const base: ExportFieldOption[] = Object.entries(PROJECT_FIELD_LABELS)
           .filter(([k]) => k !== 'progressText')
@@ -813,7 +842,47 @@ export const mockApi: ApiClient = {
       if (!scp || !cols?.length) throw new Error('请指定导出范围与列配置')
       const f = filters ?? {}
       const rows: Record<string, unknown>[] = []
-      if (scp === 'projects') {
+      if (scp === 'combined') {
+        let list = db.projects.filter(alive)
+        if (f.industry) list = list.filter((project) => project.industry === f.industry)
+        if (f.track) list = list.filter((project) => project.track === f.track)
+        if (f.keyword) {
+          const keyword = f.keyword.toLowerCase()
+          list = list.filter((project) => project.customerName.toLowerCase().includes(keyword)
+            || project.projectName.toLowerCase().includes(keyword))
+        }
+        if (f.projectIds?.length) list = list.filter((project) => f.projectIds!.includes(project.id))
+        for (const project of list) {
+          const monthlyRevenue = new Map(db.revenues
+            .filter((revenue) => revenue.projectId === project.id)
+            .filter((revenue) => !f.startMonth || revenue.month >= f.startMonth)
+            .filter((revenue) => !f.endMonth || revenue.month <= f.endMonth)
+            .map((revenue) => [revenue.month, revenue.amount]))
+          const progressSummary = db.progressLogs
+            .filter((log) => log.projectId === project.id)
+            .filter((log) => !f.startMonth || log.logDate.slice(0, 7) >= f.startMonth)
+            .filter((log) => !f.endMonth || log.logDate.slice(0, 7) <= f.endMonth)
+            .filter((log) => !f.startDate || log.logDate >= f.startDate)
+            .filter((log) => !f.endDate || log.logDate <= f.endDate)
+            .sort((a, b) => b.logDate.localeCompare(a.logDate) || b.id - a.id)
+            .map((log) => `${log.logDate}：${log.content}`)
+            .join('\n')
+          rows.push(Object.fromEntries(cols.map((column) => {
+            if (column.key.startsWith('revenue.')) {
+              return [column.key, monthlyRevenue.get(column.key.slice('revenue.'.length)) ?? null]
+            }
+            if (column.key === 'revenueTotal') {
+              return [column.key, revenueTotalOf(project.id, f.startMonth, f.endMonth)]
+            }
+            if (column.key === 'progressSummary') return [column.key, progressSummary]
+            if (column.key.startsWith('custom.')) {
+              return [column.key, project.customFields?.[column.key.slice('custom.'.length)] ?? null]
+            }
+            const value = (project as unknown as Record<string, unknown>)[column.key]
+            return [column.key, Array.isArray(value) ? value.join('、') : value ?? null]
+          })))
+        }
+      } else if (scp === 'projects') {
         let list = db.projects.filter(alive)
         if (f.industry) list = list.filter((p) => p.industry === f.industry)
         if (f.track) list = list.filter((p) => p.track === f.track)

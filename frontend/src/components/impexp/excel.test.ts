@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import * as XLSX from 'xlsx'
-import { MAX_IMPORT_FILE_BYTES, parseExcelFile, validateImportFile } from './excel'
+import { buildExportWorkbook, MAX_IMPORT_FILE_BYTES, parseExcelFile, validateImportFile } from './excel'
 
 function multiLevelHeaderFile(includeData: boolean): File {
   const worksheet = {} as XLSX.WorkSheet
@@ -70,5 +70,38 @@ describe('validateImportFile', () => {
     expect(parsed.dataStartRow).toBe(2)
     expect(parsed.headers).toEqual(['客户名称', '项目名称'])
     expect(parsed.rows).toEqual([['示例客户', '示例项目']])
+  })
+})
+
+describe('buildExportWorkbook', () => {
+  it('keeps the combined export in one worksheet with numeric revenue and multiline progress', () => {
+    const workbook = buildExportWorkbook(
+      [
+        { key: 'projectName', title: '项目名称' },
+        { key: 'revenue.2026-08', title: '2026-08收入（万元）' },
+        { key: 'progressSummary', title: '进展日志（日期：内容）' },
+      ],
+      [{
+        projectName: '数据安全治理',
+        'revenue.2026-08': 120.5,
+        progressSummary: '2026-08-18：完成访谈\n2026-08-10：提交方案',
+      }],
+      '项目综合表',
+    )
+
+    expect(workbook.SheetNames).toEqual(['项目综合表'])
+    const sheet = workbook.Sheets['项目综合表']
+    expect(sheet.A2.v).toBe('数据安全治理')
+    expect(sheet.B2.v).toBe(120.5)
+    expect(sheet.B2.t).toBe('n')
+    expect(sheet.B2.z).toBe('#,##0.00')
+    expect(sheet.C2.v).toContain('\n')
+    expect(sheet['!autofilter']?.ref).toBe('A1:C2')
+
+    const bytes = XLSX.write(workbook, { bookType: 'xlsx', type: 'array', cellStyles: true })
+    const reopened = XLSX.read(bytes, { type: 'array', cellStyles: true })
+    expect(reopened.SheetNames).toEqual(['项目综合表'])
+    expect(reopened.Sheets['项目综合表'].B2.v).toBe(120.5)
+    expect(reopened.Sheets['项目综合表'].C2.v).toContain('2026-08-10：提交方案')
   })
 })

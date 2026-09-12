@@ -110,6 +110,24 @@ class ApiIntegrationTest {
                 .andExpect(status().isOk())
                 .andReturn());
 
+        long combinedTemplateId = dataId(mockMvc.perform(post("/api/config/export-templates").with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "name":"测试综合表",
+                                  "scope":"combined",
+                                  "columns":[
+                                    {"key":"projectName","title":"项目名称"},
+                                    {"key":"revenue.2026-08","title":"8月收入"},
+                                    {"key":"revenue.2026-09","title":"9月收入"},
+                                    {"key":"revenueTotal","title":"收入合计"},
+                                    {"key":"progressSummary","title":"全部进展"}
+                                  ]
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andReturn());
+
         long projectId = dataId(mockMvc.perform(post("/api/projects").with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -246,6 +264,28 @@ class ApiIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.totalRows").value(2))
                 .andExpect(jsonPath("$.data.rows[0].revenueTotal").value(200.0));
+
+        mockMvc.perform(get("/api/export/fields").param("scope", "combined"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[?(@.key == 'revenue.2026-08')]", hasSize(1)))
+                .andExpect(jsonPath("$.data[?(@.key == 'progressSummary')]", hasSize(1)));
+
+        mockMvc.perform(post("/api/export").with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "templateId":%d,
+                                  "filters":{"startMonth":"2026-08","endMonth":"2026-09"}
+                                }
+                                """.formatted(combinedTemplateId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.scope").value("combined"))
+                .andExpect(jsonPath("$.data.totalRows").value(2))
+                .andExpect(jsonPath("$.data.rows[0]['revenue.2026-08']").value(120.0))
+                .andExpect(jsonPath("$.data.rows[0]['revenue.2026-09']").value(80.0))
+                .andExpect(jsonPath("$.data.rows[0].revenueTotal").value(200.0))
+                .andExpect(jsonPath("$.data.rows[0].progressSummary").value(
+                        org.hamcrest.Matchers.containsString("2026-08-18：完成首次需求访谈")));
 
         mockMvc.perform(post("/api/export").with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)

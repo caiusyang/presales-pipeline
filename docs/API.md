@@ -282,9 +282,9 @@
 
 ## 导出
 
-### `GET /api/export/fields?scope=projects`
+### `GET /api/export/fields?scope=combined`
 
-查询指定范围可用字段。`projects` 还会返回 `custom.{fieldKey}` 自定义字段。
+查询指定范围可用字段。`combined` 返回项目字段、已有收入月份列、收入合计、进展汇总和自定义字段。收入月份字段使用 `revenue.YYYY-MM`，例如 `revenue.2026-08`。
 
 ### `POST /api/export`
 
@@ -305,16 +305,19 @@
 
 ```json
 {
-  "scope": "projects",
+  "scope": "combined",
   "columns": [
     {"key": "customerName", "title": "客户名称"},
-    {"key": "revenueTotal", "title": "收入合计"}
+    {"key": "projectName", "title": "项目名称"},
+    {"key": "revenue.2026-08", "title": "2026-08收入（万元）"},
+    {"key": "revenueTotal", "title": "收入合计"},
+    {"key": "progressSummary", "title": "进展日志"}
   ],
   "filters": {}
 }
 ```
 
-`scope` 支持 `projects/revenues/progress`。响应只返回 JSON 和有序列定义，xlsx 由前端生成。
+`scope` 支持 `combined/projects/revenues/progress`。前端默认使用 `combined` 生成项目综合宽表：每个活动项目只占一行，各月份收入保持为独立数值列，`progressSummary` 按时间倒序以“日期：内容”换行汇总，避免收入与进展两组明细相乘导致重复。月份筛选会同时约束收入月份、收入合计和进展日志。响应只返回 JSON 和有序列定义，xlsx 由前端生成，文件中只有一个工作表。
 
 ## 备份与健康
 

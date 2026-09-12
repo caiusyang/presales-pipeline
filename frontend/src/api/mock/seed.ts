@@ -308,7 +308,7 @@ export function seedDB(): MockDB {
 
   const exportTemplates: ExportTemplate[] = [
     {
-      id: seq++, name: '领导总表（主表）', scope: 'projects',
+      id: seq++, name: '项目综合宽表', scope: 'combined',
       columns: [
         { key: 'customerName', title: '客户名称' },
         { key: 'projectName', title: '项目名称' },
@@ -319,7 +319,10 @@ export function seedDB(): MockDB {
         { key: 'solution', title: '解决方案' },
         { key: 'subSolution', title: '细分解决方案' },
         { key: 'purchasedProducts', title: '已购产品' },
+        { key: 'revenue.2026-07', title: '2026-07收入（万元）' },
+        { key: 'revenue.2026-08', title: '2026-08收入（万元）' },
         { key: 'revenueTotal', title: '累计收入(万元)' },
+        { key: 'progressSummary', title: '进展日志（日期：内容）' },
         { key: 'keyRisks', title: '关键风险' },
       ],
       createdAt: now, updatedAt: now,

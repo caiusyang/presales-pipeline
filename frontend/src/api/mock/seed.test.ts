@@ -29,5 +29,8 @@ describe('demo seed data', () => {
       projectCounts.set(project.customerName, (projectCounts.get(project.customerName) ?? 0) + 1)
     })
     expect([...projectCounts.values()].some((count) => count > 1)).toBe(true)
+    expect(db.exportTemplates.some((template) =>
+      template.scope === 'combined'
+      && template.columns.some((column) => column.key === 'progressSummary'))).toBe(true)
   })
 })

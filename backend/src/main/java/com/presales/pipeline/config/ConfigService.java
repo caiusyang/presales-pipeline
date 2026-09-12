@@ -256,7 +256,7 @@ public class ConfigService {
         List<Map<String, Object>> columns = new ArrayList<>();
         for (ExportColumnRequest column : request.columns()) {
             String key = clean(column.key());
-            if (!allowedKeys.contains(key)) {
+            if (!allowedKeys.contains(key) && !ExportScope.isRevenueMonthField(scope, key)) {
                 throw BusinessException.badRequest("当前导出范围不支持字段：" + key);
             }
             if (!keys.add(key)) {
@@ -272,10 +272,19 @@ public class ConfigService {
     private Set<String> allowedExportKeys(String scope) {
         Set<String> keys = new LinkedHashSet<>();
         switch (scope) {
+            case ExportScope.COMBINED -> {
+                keys.addAll(Set.of("id", "externalId", "customerName", "projectName", "projectStatus",
+                        "safetySpace", "solution", "subSolution", "purchasedProducts", "track", "industry",
+                        "subIndustry", "scenario", "keyRisks", "keyNeeds", "revenueTotal", "progressSummary",
+                        "createdAt", "updatedAt"));
+                customFieldRepository.findAllByDeletedFalseOrderBySortOrderAscIdAsc().forEach(definition ->
+                        keys.add("custom." + definition.getFieldKey()));
+            }
             case ExportScope.PROJECTS -> {
-                keys.addAll(Set.of("id", "externalId", "customerName", "projectName", "safetySpace",
-                        "solution", "track", "industry", "subIndustry", "scenario", "keyRisks",
-                        "keyNeeds", "revenueTotal", "createdAt", "updatedAt"));
+                keys.addAll(Set.of("id", "externalId", "customerName", "projectName", "projectStatus",
+                        "safetySpace", "solution", "subSolution", "purchasedProducts", "track", "industry",
+                        "subIndustry", "scenario", "keyRisks", "keyNeeds", "revenueTotal", "createdAt",
+                        "updatedAt"));
                 customFieldRepository.findAllByDeletedFalseOrderBySortOrderAscIdAsc().forEach(definition ->
                         keys.add("custom." + definition.getFieldKey()));
             }

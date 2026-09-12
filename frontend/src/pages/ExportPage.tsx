@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import dayjs from 'dayjs'
 import { toast } from 'sonner'
 import { Download, Eye, Save } from 'lucide-react'
@@ -20,6 +20,7 @@ import { ExportColumnConfig } from '@/components/impexp/ExportColumnConfig'
 import { SaveNameDialog } from '@/components/impexp/SaveNameDialog'
 
 const SCOPE_LABELS: Record<ExportScope, string> = {
+  combined: '项目综合表',
   projects: '项目主表',
   revenues: '收入明细',
   progress: '进展日志',
@@ -38,7 +39,7 @@ interface FilterState {
 const EMPTY_FILTERS: FilterState = { industry: '', track: '', keyword: '', startMonth: '', endMonth: '' }
 
 export default function ExportPage() {
-  const [scope, setScope] = useState<ExportScope>('projects')
+  const [scope, setScope] = useState<ExportScope>('combined')
   const [templateId, setTemplateId] = useState<ID | null>(null)
   const [templateName, setTemplateName] = useState('')
   const [columns, setColumns] = useState<ExportColumn[]>([])
@@ -47,13 +48,21 @@ export default function ExportPage() {
   const [previewKey, setPreviewKey] = useState('')
   const [saveOpen, setSaveOpen] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [autoFillCombined, setAutoFillCombined] = useState(true)
 
   const templates = useExportTemplates()
   const templateMut = useTemplateMutations()
   const fieldsQuery = useExportFields(scope)
   const exportMut = useExportData()
-  const industryDict = useDictionaries(scope === 'projects' ? 'industry' : undefined)
-  const trackDict = useDictionaries(scope === 'projects' ? 'track' : undefined)
+  const projectBased = scope === 'combined' || scope === 'projects'
+  const industryDict = useDictionaries(projectBased ? 'industry' : undefined)
+  const trackDict = useDictionaries(projectBased ? 'track' : undefined)
+
+  useEffect(() => {
+    if (scope !== 'combined' || !autoFillCombined || !fieldsQuery.data?.length) return
+    setColumns(fieldsQuery.data.map((field) => ({ key: field.key, title: field.title })))
+    setAutoFillCombined(false)
+  }, [autoFillCombined, fieldsQuery.data, scope])
 
   const scopeTemplates = useMemo(
     () => (templates.data ?? []).filter((t) => t.scope === scope),
@@ -63,10 +72,10 @@ export default function ExportPage() {
   const dictOptions = (nodes: typeof industryDict.data) =>
     flattenDictTree(nodes ?? []).map((n) => ({ value: n.value, label: n.value }))
 
-  /** 组装 filters（去掉空值；月份区间仅影响 projects 的 revenueTotal 期间汇总，revenues/progress 按区间过滤） */
+  /** 组装 filters（去掉空值；综合表的月份区间同时约束收入与进展） */
   const buildFilters = (): ExportFilters => {
     const f: ExportFilters = {}
-    if (scope === 'projects') {
+    if (projectBased) {
       if (filters.industry) f.industry = filters.industry
       if (filters.track) f.track = filters.track
       if (filters.keyword.trim()) f.keyword = filters.keyword.trim()
@@ -83,6 +92,7 @@ export default function ExportPage() {
     setTemplateId(null)
     setTemplateName('')
     setColumns([])
+    setAutoFillCombined(v === 'combined')
     setFilters(EMPTY_FILTERS)
     setPreview(null)
   }
@@ -165,11 +175,12 @@ export default function ExportPage() {
     <div className="mx-auto max-w-6xl space-y-4 p-6">
       <div>
         <h1 className="text-lg font-semibold">Excel 导出</h1>
-        <p className="text-sm text-muted-foreground">按模板或临时选列导出快照，列名/列顺序完全自定义，拿来即用</p>
+        <p className="text-sm text-muted-foreground">默认按项目汇聚主表、各月收入和全部进展，每个项目导出为一行</p>
       </div>
 
       <Tabs value={scope} onValueChange={handleScopeChange}>
         <TabsList>
+          <TabsTrigger value="combined">项目综合表</TabsTrigger>
           <TabsTrigger value="projects">项目主表</TabsTrigger>
           <TabsTrigger value="revenues">收入明细</TabsTrigger>
           <TabsTrigger value="progress">进展日志</TabsTrigger>
@@ -213,6 +224,7 @@ export default function ExportPage() {
           columns={columns}
           onChange={(cols) => {
             setColumns(cols)
+            setAutoFillCombined(false)
             setPreview(null)
           }}
         />
@@ -221,12 +233,12 @@ export default function ExportPage() {
       <Card>
         <CardHeader>
           <CardTitle className="text-base">筛选条件</CardTitle>
-          {scope === 'projects' && (
-            <CardDescription>月份区间为可选，填写后「累计收入」按该期间汇总</CardDescription>
+          {projectBased && (
+            <CardDescription>月份区间会同时限制收入月份、收入合计和进展日志；留空则导出全部期间</CardDescription>
           )}
         </CardHeader>
         <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {scope === 'projects' && (
+          {projectBased && (
             <>
               <div className="space-y-1.5">
                 <Label>行业</Label>

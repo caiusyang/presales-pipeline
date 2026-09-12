@@ -55,3 +55,19 @@ SELECT '领导总表', 'projects',
 WHERE NOT EXISTS (
     SELECT 1 FROM export_templates WHERE name = '领导总表' AND scope = 'projects' AND deleted = FALSE
 );
+
+INSERT INTO export_templates (name, scope, columns, deleted, created_at, updated_at)
+SELECT '项目综合宽表', 'combined',
+       JSON_ARRAY(
+           JSON_OBJECT('key', 'externalId', 'title', '项目编号'),
+           JSON_OBJECT('key', 'customerName', 'title', '客户名称'),
+           JSON_OBJECT('key', 'projectName', 'title', '项目名称'),
+           JSON_OBJECT('key', 'projectStatus', 'title', '项目状态'),
+           JSON_OBJECT('key', 'industry', 'title', '行业'),
+           JSON_OBJECT('key', 'revenue.2026-08', 'title', '2026-08收入（万元）'),
+           JSON_OBJECT('key', 'revenueTotal', 'title', '收入合计（万元）'),
+           JSON_OBJECT('key', 'progressSummary', 'title', '进展日志')
+       ), FALSE, NOW(6), NOW(6)
+WHERE NOT EXISTS (
+    SELECT 1 FROM export_templates WHERE name = '项目综合宽表' AND scope = 'combined' AND deleted = FALSE
+);

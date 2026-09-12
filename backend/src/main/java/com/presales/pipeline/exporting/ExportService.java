@@ -32,12 +32,21 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 @Service
 public class ExportService {
 
     private static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Shanghai");
     private static final Map<String, List<ExportFieldResponse>> STANDARD_FIELDS = Map.of(
+            ExportScope.COMBINED, List.of(
+                    field("id", "项目ID"), field("externalId", "外部系统编号"), field("customerName", "客户名称"),
+                    field("projectName", "项目名称"), field("projectStatus", "项目状态"),
+                    field("safetySpace", "安全空间"), field("solution", "解决方案"),
+                    field("subSolution", "细分解决方案"), field("purchasedProducts", "已购产品"),
+                    field("track", "赛道"), field("industry", "行业"), field("subIndustry", "子行业"),
+                    field("scenario", "场景"), field("keyRisks", "关键风险"), field("keyNeeds", "关键需求")
+            ),
             ExportScope.PROJECTS, List.of(
                     field("id", "项目ID"), field("externalId", "外部系统编号"), field("customerName", "客户名称"),
                     field("projectName", "项目名称"), field("projectStatus", "项目状态"),
@@ -81,7 +90,18 @@ public class ExportService {
     public List<ExportFieldResponse> availableFields(String requestedScope) {
         String scope = ExportScope.normalize(requestedScope);
         List<ExportFieldResponse> fields = new ArrayList<>(STANDARD_FIELDS.get(scope));
-        if (ExportScope.PROJECTS.equals(scope)) {
+        if (ExportScope.COMBINED.equals(scope)) {
+            revenueRepository.findActiveInRange(null, null).stream()
+                    .map(Revenue::getMonth)
+                    .distinct()
+                    .sorted()
+                    .forEach(month -> fields.add(field("revenue." + month, month + "收入（万元）")));
+            fields.add(field("revenueTotal", "收入合计（万元）"));
+            fields.add(field("progressSummary", "进展日志（日期：内容）"));
+            fields.add(field("createdAt", "创建时间"));
+            fields.add(field("updatedAt", "更新时间"));
+        }
+        if (ExportScope.PROJECTS.equals(scope) || ExportScope.COMBINED.equals(scope)) {
             customFieldRepository.findAllByDeletedFalseOrderBySortOrderAscIdAsc().forEach(definition ->
                     fields.add(field("custom." + definition.getFieldKey(), definition.getLabel())));
         }
@@ -103,6 +123,7 @@ public class ExportService {
         }
 
         List<Map<String, Object>> rows = switch (resolved.scope()) {
+            case ExportScope.COMBINED -> combinedRows(resolved.columns(), filters, startMonth, endMonth);
             case ExportScope.PROJECTS -> projectRows(resolved.columns(), filters, startMonth, endMonth);
             case ExportScope.REVENUES -> revenueRows(resolved.columns(), filters, startMonth, endMonth);
             case ExportScope.PROGRESS -> progressRows(resolved.columns(), filters);
@@ -129,14 +150,14 @@ public class ExportService {
             throw BusinessException.badRequest("至少选择一个导出列");
         }
         Set<String> allowed = availableFields(scope).stream().map(ExportFieldResponse::key)
-                .collect(java.util.stream.Collectors.toSet());
+                .collect(Collectors.toSet());
         Set<String> seen = new HashSet<>();
         for (ExportColumnRequest column : columns) {
             if (column == null || column.key() == null || column.key().isBlank()
                     || column.title() == null || column.title().isBlank()) {
                 throw BusinessException.badRequest("导出列的字段和列名不能为空");
             }
-            if (!allowed.contains(column.key())) {
+            if (!allowed.contains(column.key()) && !ExportScope.isRevenueMonthField(scope, column.key())) {
                 throw BusinessException.badRequest("当前范围不支持导出字段：" + column.key());
             }
             if (!seen.add(column.key())) {
@@ -146,12 +167,60 @@ public class ExportService {
         return new ResolvedExport(scope, columns);
     }
 
+    private List<Map<String, Object>> combinedRows(List<ExportColumnRequest> columns,
+                                                    ExportFilters filters,
+                                                    String startMonth,
+                                                    String endMonth) {
+        List<Project> projects = filteredProjects(filters);
+        Set<Long> ids = projects.stream().map(Project::getId).collect(Collectors.toSet());
+        Map<Long, Map<String, BigDecimal>> monthlyRevenue = new HashMap<>();
+        Map<Long, BigDecimal> totals = new HashMap<>();
+        for (Revenue revenue : revenueRepository.findActiveInRange(startMonth, endMonth)) {
+            Long projectId = revenue.getProject().getId();
+            if (!ids.contains(projectId)) {
+                continue;
+            }
+            monthlyRevenue.computeIfAbsent(projectId, ignored -> new HashMap<>())
+                    .put(revenue.getMonth(), revenue.getAmount());
+            totals.merge(projectId, revenue.getAmount(), BigDecimal::add);
+        }
+
+        Map<Long, List<ProgressLog>> progressByProject = progressRepository.findAllActiveWithProject().stream()
+                .filter(log -> ids.contains(log.getProject().getId()))
+                .filter(log -> inProgressRange(log, filters, startMonth, endMonth))
+                .collect(Collectors.groupingBy(log -> log.getProject().getId(), LinkedHashMap::new, Collectors.toList()));
+
+        return projects.stream().map(project -> row(columns, key -> {
+            if (ExportScope.isRevenueMonthField(ExportScope.COMBINED, key)) {
+                return monthlyRevenue.getOrDefault(project.getId(), Map.of())
+                        .get(key.substring("revenue.".length()));
+            }
+            if ("progressSummary".equals(key)) {
+                return progressByProject.getOrDefault(project.getId(), List.of()).stream()
+                        .map(log -> log.getLogDate() + "：" + log.getContent())
+                        .collect(Collectors.joining("\n"));
+            }
+            return projectValue(project, totals.getOrDefault(project.getId(), BigDecimal.ZERO), key);
+        })).toList();
+    }
+
+    private boolean inProgressRange(ProgressLog log,
+                                    ExportFilters filters,
+                                    String startMonth,
+                                    String endMonth) {
+        String month = log.getLogDate().toString().substring(0, 7);
+        return (startMonth == null || month.compareTo(startMonth) >= 0)
+                && (endMonth == null || month.compareTo(endMonth) <= 0)
+                && (filters.startDate() == null || !log.getLogDate().isBefore(filters.startDate()))
+                && (filters.endDate() == null || !log.getLogDate().isAfter(filters.endDate()));
+    }
+
     private List<Map<String, Object>> projectRows(List<ExportColumnRequest> columns,
                                                    ExportFilters filters,
                                                    String startMonth,
                                                    String endMonth) {
         List<Project> projects = filteredProjects(filters);
-        Set<Long> ids = projects.stream().map(Project::getId).collect(java.util.stream.Collectors.toSet());
+        Set<Long> ids = projects.stream().map(Project::getId).collect(Collectors.toSet());
         Map<Long, BigDecimal> totals = new HashMap<>();
         for (Revenue revenue : revenueRepository.findActiveInRange(startMonth, endMonth)) {
             if (ids.contains(revenue.getProject().getId())) {
@@ -167,7 +236,7 @@ public class ExportService {
                                                    String startMonth,
                                                    String endMonth) {
         Set<Long> ids = filteredProjects(filters).stream().map(Project::getId)
-                .collect(java.util.stream.Collectors.toSet());
+                .collect(Collectors.toSet());
         return revenueRepository.findActiveInRange(startMonth, endMonth).stream()
                 .filter(revenue -> ids.contains(revenue.getProject().getId()))
                 .map(revenue -> row(columns, key -> revenueValue(revenue, key)))
@@ -176,7 +245,7 @@ public class ExportService {
 
     private List<Map<String, Object>> progressRows(List<ExportColumnRequest> columns, ExportFilters filters) {
         Set<Long> ids = filteredProjects(filters).stream().map(Project::getId)
-                .collect(java.util.stream.Collectors.toSet());
+                .collect(Collectors.toSet());
         return progressRepository.findAllActiveWithProject().stream()
                 .filter(log -> ids.contains(log.getProject().getId()))
                 .filter(log -> filters.startDate() == null || !log.getLogDate().isBefore(filters.startDate()))

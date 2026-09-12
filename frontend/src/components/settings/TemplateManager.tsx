@@ -29,6 +29,7 @@ import { cn } from '@/lib/utils'
 type BadgeVariant = 'default' | 'secondary' | 'outline' | 'success' | 'warning' | 'destructive' | 'info'
 
 const SCOPE_META: Record<ExportScope, { label: string; variant: BadgeVariant }> = {
+  combined: { label: '综合表', variant: 'default' },
   projects: { label: '主表', variant: 'info' },
   revenues: { label: '收入明细', variant: 'success' },
   progress: { label: '进展日志', variant: 'warning' },

@@ -177,19 +177,65 @@ export function downloadImportSample(): void {
 }
 
 /** 按列配置生成 xlsx 并下载：首行为 title，数据按 columns.key 取值 */
+export function buildExportWorkbook(
+  columns: ExportColumn[],
+  rows: Record<string, unknown>[],
+  sheetName: string,
+): XLSX.WorkBook {
+  const aoa: unknown[][] = [columns.map((c) => c.title)]
+  for (const row of rows) {
+    aoa.push(columns.map((column) => {
+      const value = row[column.key]
+      if (Array.isArray(value)) return value.join('、')
+      if (typeof value === 'string'
+        && (column.key.endsWith('At') || column.key.endsWith('Date'))
+        && dayjs(value).isValid()) {
+        return dayjs(value).toDate()
+      }
+      return value ?? ''
+    }))
+  }
+  const ws = XLSX.utils.aoa_to_sheet(aoa, { cellDates: true })
+  ws['!cols'] = columns.map((column, columnIndex) => {
+    const contentWidth = aoa.slice(1, 201).reduce((width, row) =>
+      Math.max(width, cellToString(row[columnIndex]).split('\n').reduce((max, line) => Math.max(max, line.length), 0)), 0)
+    const preferred = column.key === 'progressSummary' ? 52 : Math.max(colWidth(column.title), contentWidth + 2)
+    return { wch: Math.min(52, preferred) }
+  })
+  if (ws['!ref']) ws['!autofilter'] = { ref: ws['!ref'] }
+
+  columns.forEach((column, columnIndex) => {
+    const header = ws[XLSX.utils.encode_cell({ r: 0, c: columnIndex })]
+    if (header) {
+      header.s = {
+        fill: { fgColor: { rgb: '1F4E78' } },
+        font: { bold: true, color: { rgb: 'FFFFFF' } },
+        alignment: { horizontal: 'center', vertical: 'center' },
+      }
+    }
+    for (let rowIndex = 1; rowIndex < aoa.length; rowIndex += 1) {
+      const cell = ws[XLSX.utils.encode_cell({ r: rowIndex, c: columnIndex })]
+      if (!cell) continue
+      if (column.key === 'revenueTotal' || column.key.startsWith('revenue.')) cell.z = '#,##0.00'
+      if (column.key.endsWith('At')) cell.z = 'yyyy-mm-dd hh:mm'
+      else if (column.key.endsWith('Date')) cell.z = 'yyyy-mm-dd'
+      if (column.key === 'progressSummary') {
+        cell.s = { alignment: { wrapText: true, vertical: 'top' } }
+      }
+    }
+  })
+
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, sheetName.slice(0, 31))
+  return wb
+}
+
 export function downloadExportXlsx(
   columns: ExportColumn[],
   rows: Record<string, unknown>[],
   sheetName: string,
   filename: string,
 ): void {
-  const aoa: unknown[][] = [columns.map((c) => c.title)]
-  for (const row of rows) {
-    aoa.push(columns.map((c) => row[c.key] ?? ''))
-  }
-  const ws = XLSX.utils.aoa_to_sheet(aoa)
-  ws['!cols'] = columns.map((c) => ({ wch: colWidth(c.title) }))
-  const wb = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(wb, ws, sheetName.slice(0, 31))
-  XLSX.writeFile(wb, filename)
+  const wb = buildExportWorkbook(columns, rows, sheetName)
+  XLSX.writeFile(wb, filename, { cellStyles: true })
 }

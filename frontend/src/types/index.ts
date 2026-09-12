@@ -135,7 +135,7 @@ export interface ImportMapping {
 }
 
 // ---------- 导出模板 ----------
-export type ExportScope = 'projects' | 'revenues' | 'progress'
+export type ExportScope = 'combined' | 'projects' | 'revenues' | 'progress'
 export interface ExportColumn {
   key: string
   /** 导出到 Excel 的列名（可自定义为领导总表列名） */
