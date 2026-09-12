@@ -12,7 +12,7 @@ export type ProjectFieldKey = keyof Omit<
 export interface ProjectFieldDef {
   key: ProjectFieldKey | 'revenueTotal'
   label: string
-  kind: 'text' | 'textarea' | 'dict' | 'computed'
+  kind: 'text' | 'textarea' | 'dict' | 'status' | 'multivalue' | 'computed'
   /** kind=dict 时的字典类型；industry/subIndustry 走行业→子行业级联 */
   dict?: 'track' | 'industry' | 'solution' | 'safety_space'
   /** 列表中默认是否显示 */
@@ -25,10 +25,13 @@ export const PROJECT_FIELD_DEFS: ProjectFieldDef[] = [
   { key: 'externalId', label: '外部编号', kind: 'text', defaultVisible: false, editable: true },
   { key: 'customerName', label: '客户名称', kind: 'text', defaultVisible: true, editable: true },
   { key: 'projectName', label: '项目名称', kind: 'text', defaultVisible: true, editable: true },
+  { key: 'projectStatus', label: '项目状态', kind: 'status', defaultVisible: true, editable: true },
   { key: 'industry', label: '行业', kind: 'dict', dict: 'industry', defaultVisible: true, editable: true },
   { key: 'subIndustry', label: '子行业', kind: 'dict', dict: 'industry', defaultVisible: true, editable: true },
   { key: 'track', label: '赛道', kind: 'dict', dict: 'track', defaultVisible: true, editable: true },
   { key: 'solution', label: '解决方案', kind: 'dict', dict: 'solution', defaultVisible: true, editable: true },
+  { key: 'subSolution', label: '细分解决方案', kind: 'dict', dict: 'solution', defaultVisible: true, editable: true },
+  { key: 'purchasedProducts', label: '已购产品', kind: 'multivalue', defaultVisible: true, editable: true },
   { key: 'safetySpace', label: '安全空间', kind: 'text', defaultVisible: false, editable: true },
   { key: 'scenario', label: '应用场景', kind: 'textarea', defaultVisible: false, editable: true },
   { key: 'keyNeeds', label: '关键需求', kind: 'textarea', defaultVisible: false, editable: true },
@@ -53,6 +56,7 @@ export function getProjectFieldValue(p: Project, key: string): string {
   }
   const v = (p as unknown as Record<string, unknown>)[key]
   if (v == null) return ''
+  if (Array.isArray(v)) return v.join('、')
   return String(v)
 }
 
@@ -86,4 +90,26 @@ export function industryCascade(industryTree: DictNode[]): {
     }
   }
   return { industries, subMap }
+}
+
+/** 解决方案→细分解决方案→产品三级关联。 */
+export function solutionCascade(solutionTree: DictNode[]): {
+  solutions: DictNode[]
+  subMap: Map<string, DictNode[]>
+  productMap: Map<string, DictNode[]>
+} {
+  const solutions = [...solutionTree].sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id)
+  const subMap = new Map<string, DictNode[]>()
+  const productMap = new Map<string, DictNode[]>()
+  for (const solution of solutions) {
+    const subs = [...(solution.children ?? [])].sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id)
+    subMap.set(solution.value, subs)
+    for (const sub of subs) {
+      productMap.set(
+        `${solution.value}\u0000${sub.value}`,
+        [...(sub.children ?? [])].sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id),
+      )
+    }
+  }
+  return { solutions, subMap, productMap }
 }

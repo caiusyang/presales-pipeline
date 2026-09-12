@@ -1,19 +1,19 @@
 INSERT INTO projects (
-    external_id, customer_name, project_name, safety_space, solution, track,
+    external_id, customer_name, project_name, project_status, safety_space, solution, purchased_products, track,
     industry, sub_industry, scenario, key_risks, key_needs, custom_fields,
     deleted, created_at, updated_at
 )
-SELECT 'DEMO-001', '华东示例银行', '数据安全治理一期', '数据域', '安全咨询', '数据安全',
+SELECT 'DEMO-001', '华东示例银行', '数据安全治理一期', '机会点识别', '数据域', '安全咨询', JSON_ARRAY(), '数据安全',
        '金融', '银行', '核心数据分级分类与流转治理', '跨部门数据口径尚未统一',
        '完成现状调研并形成分阶段建设路线', JSON_OBJECT(), FALSE, NOW(6), NOW(6)
 WHERE NOT EXISTS (SELECT 1 FROM projects WHERE external_id = 'DEMO-001');
 
 INSERT INTO projects (
-    external_id, customer_name, project_name, safety_space, solution, track,
+    external_id, customer_name, project_name, project_status, safety_space, solution, purchased_products, track,
     industry, sub_industry, scenario, key_risks, key_needs, custom_fields,
     deleted, created_at, updated_at
 )
-SELECT 'DEMO-002', '滨海市政务云', '云安全运营平台', '云域', '运营服务', '云安全',
+SELECT 'DEMO-002', '滨海市政务云', '云安全运营平台', '机会点识别', '云域', '运营服务', JSON_ARRAY(), '云安全',
        '政府', '政务', '政务云统一安全运营', '存量系统接口差异较大',
        '先完成重点系统接入验证', JSON_OBJECT(), FALSE, NOW(6), NOW(6)
 WHERE NOT EXISTS (SELECT 1 FROM projects WHERE external_id = 'DEMO-002');

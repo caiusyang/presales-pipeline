@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 @Service
 public class DictionaryService {
@@ -127,10 +128,17 @@ public class DictionaryService {
     }
 
     @Transactional(readOnly = true)
-    public void validateProjectSelections(String safetySpace, String solution, String track,
+    public void validateProjectSelections(String safetySpace, String solution, String subSolution,
+                                          List<String> purchasedProducts, String track,
                                           String industry, String subIndustry) {
         validateIfConfigured("safety_space", safetySpace);
-        validateIfConfigured("solution", solution);
+        DictionaryItem solutionItem = validateIfConfigured("solution", solution);
+        DictionaryItem subSolutionItem = validateChildIfConfigured(
+                "sub_solution", subSolution, solutionItem, "细分解决方案不属于所选解决方案");
+        for (String product : purchasedProducts == null ? List.<String>of() : purchasedProducts) {
+            validateChildIfConfigured("product", product, subSolutionItem,
+                    "产品“" + product + "”不属于所选细分解决方案");
+        }
         validateIfConfigured("track", track);
         DictionaryItem industryItem = validateIfConfigured("industry", industry);
         DictionaryItem subIndustryItem = validateIfConfigured("sub_industry", subIndustry);
@@ -156,6 +164,26 @@ public class DictionaryService {
                 .orElseThrow(() -> BusinessException.badRequest("“" + value + "”不是有效的" + type + "字典值"));
     }
 
+    private DictionaryItem validateChildIfConfigured(String type, String value,
+                                                      DictionaryItem expectedParent, String errorMessage) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        List<DictionaryItem> configured = repository.findAllByTypeAndDeletedFalseOrderBySortOrderAscIdAsc(type);
+        if (configured.isEmpty()) {
+            throw BusinessException.badRequest(errorMessage);
+        }
+        if (expectedParent == null) {
+            throw BusinessException.badRequest(errorMessage);
+        }
+        return configured.stream()
+                .filter(item -> item.getValue().equalsIgnoreCase(value.trim()))
+                .filter(item -> item.getParent() != null
+                        && Objects.equals(item.getParent().getId(), expectedParent.getId()))
+                .findFirst()
+                .orElseThrow(() -> BusinessException.badRequest(errorMessage));
+    }
+
     private boolean isRequestedRoot(DictionaryItem item, String type) {
         if (type == null) {
             return item.getParent() == null;
@@ -168,8 +196,8 @@ public class DictionaryService {
 
     private DictionaryItem resolveParent(Long parentId, String type, Long currentId) {
         if (parentId == null) {
-            if ("sub_industry".equals(type)) {
-                throw BusinessException.badRequest("子行业必须选择上级行业");
+            if (Set.of("sub_industry", "sub_solution", "product").contains(type)) {
+                throw BusinessException.badRequest(typeLabel(type) + "必须选择上级");
             }
             return null;
         }
@@ -179,6 +207,12 @@ public class DictionaryService {
         DictionaryItem parent = getActive(parentId);
         if ("sub_industry".equals(type) && !"industry".equals(parent.getType())) {
             throw BusinessException.badRequest("子行业的上级必须是行业字典项");
+        }
+        if ("sub_solution".equals(type) && !"solution".equals(parent.getType())) {
+            throw BusinessException.badRequest("细分解决方案的上级必须是解决方案");
+        }
+        if ("product".equals(type) && !"sub_solution".equals(parent.getType())) {
+            throw BusinessException.badRequest("产品的上级必须是细分解决方案");
         }
         return parent;
     }
@@ -203,6 +237,8 @@ public class DictionaryService {
         String projectValue = switch (item.getType()) {
             case "safety_space" -> project.getSafetySpace();
             case "solution" -> project.getSolution();
+            case "sub_solution" -> project.getSubSolution();
+            case "product" -> project.getPurchasedProducts().contains(item.getValue()) ? item.getValue() : null;
             case "track" -> project.getTrack();
             case "industry" -> project.getIndustry();
             case "sub_industry" -> project.getSubIndustry();
@@ -211,8 +247,15 @@ public class DictionaryService {
         if (!Objects.equals(projectValue, item.getValue())) {
             return false;
         }
-        return !"sub_industry".equals(item.getType()) || item.getParent() == null
-                || Objects.equals(project.getIndustry(), item.getParent().getValue());
+        if (item.getParent() == null) {
+            return true;
+        }
+        return switch (item.getType()) {
+            case "sub_industry" -> Objects.equals(project.getIndustry(), item.getParent().getValue());
+            case "sub_solution" -> Objects.equals(project.getSolution(), item.getParent().getValue());
+            case "product" -> Objects.equals(project.getSubSolution(), item.getParent().getValue());
+            default -> true;
+        };
     }
 
     private void cascadeProjectValue(DictionaryItem item, String newValue) {
@@ -225,6 +268,9 @@ public class DictionaryService {
             switch (field) {
                 case "safety_space" -> project.setSafetySpace(newValue);
                 case "solution" -> project.setSolution(newValue);
+                case "sub_solution" -> project.setSubSolution(newValue);
+                case "product" -> project.setPurchasedProducts(project.getPurchasedProducts().stream()
+                        .map(value -> value.equals(oldValue) ? newValue : value).toList());
                 case "track" -> project.setTrack(newValue);
                 case "industry" -> project.setIndustry(newValue);
                 case "sub_industry" -> project.setSubIndustry(newValue);
@@ -245,6 +291,15 @@ public class DictionaryService {
 
     private String clean(String value) {
         return value.trim();
+    }
+
+    private String typeLabel(String type) {
+        return switch (type) {
+            case "sub_industry" -> "子行业";
+            case "sub_solution" -> "细分解决方案";
+            case "product" -> "产品";
+            default -> "字典项";
+        };
     }
 
     private DictionaryNodeResponse toResponse(DictionaryItem item) {

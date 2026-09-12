@@ -17,6 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 @Service
@@ -123,8 +124,13 @@ public class ImportRecordProcessor {
                         existing == null ? null : existing.getCustomerName(), "客户名称"),
                 requiredValue(fields, existing, "projectName", "project_name",
                         existing == null ? null : existing.getProjectName(), "项目名称"),
+                value(fields, existing, "projectStatus", "project_status",
+                        existing == null ? ProjectService.DEFAULT_STATUS : existing.getProjectStatus()),
                 value(fields, existing, "safetySpace", "safety_space", existing == null ? null : existing.getSafetySpace()),
                 value(fields, existing, "solution", "solution", existing == null ? null : existing.getSolution()),
+                value(fields, existing, "subSolution", "sub_solution", existing == null ? null : existing.getSubSolution()),
+                listValue(fields, "purchasedProducts", "purchased_products",
+                        existing == null ? List.of() : existing.getPurchasedProducts()),
                 value(fields, existing, "track", "track", existing == null ? null : existing.getTrack()),
                 value(fields, existing, "industry", "industry", existing == null ? null : existing.getIndustry()),
                 value(fields, existing, "subIndustry", "sub_industry", existing == null ? null : existing.getSubIndustry()),
@@ -133,6 +139,21 @@ public class ImportRecordProcessor {
                 value(fields, existing, "keyNeeds", "key_needs", existing == null ? null : existing.getKeyNeeds()),
                 customFields
         );
+    }
+
+    private List<String> listValue(FieldBag fields, String camelKey, String snakeKey, List<String> fallback) {
+        if (!fields.contains(camelKey, snakeKey)) {
+            return fallback;
+        }
+        Object raw = fields.raw(camelKey, snakeKey);
+        if (raw == null) {
+            return List.of();
+        }
+        if (raw instanceof List<?> list) {
+            return list.stream().map(String::valueOf).toList();
+        }
+        return java.util.Arrays.stream(String.valueOf(raw).split("[,，]"))
+                .map(String::trim).filter(value -> !value.isEmpty()).toList();
     }
 
     private String value(FieldBag fields, Project existing, String camelKey, String snakeKey, String fallback) {

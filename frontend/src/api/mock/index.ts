@@ -40,7 +40,16 @@ let db: MockDB = load()
 function load(): MockDB {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    if (raw) return JSON.parse(raw) as MockDB
+    if (raw) {
+      const stored = JSON.parse(raw) as MockDB
+      stored.projects = stored.projects.map((project) => ({
+        ...project,
+        projectStatus: project.projectStatus ?? '机会点识别',
+        subSolution: project.subSolution ?? '',
+        purchasedProducts: project.purchasedProducts ?? [],
+      }))
+      return stored
+    }
   } catch {
     /* 损坏则重新播种 */
   }
@@ -87,7 +96,8 @@ function revenueTotalOf(projectId: ID, startMonth?: string, endMonth?: string): 
 /** 字段级修改日志 */
 function diffAndLog(projectId: ID, before: Project, after: ProjectInput, source: 'manual' | 'import') {
   const fields: (keyof ProjectInput)[] = [
-    'externalId', 'customerName', 'projectName', 'safetySpace', 'solution', 'track',
+    'externalId', 'customerName', 'projectName', 'projectStatus', 'safetySpace', 'solution', 'subSolution',
+    'purchasedProducts', 'track',
     'industry', 'subIndustry', 'scenario', 'keyRisks', 'keyNeeds',
   ]
   for (const f of fields) {
@@ -111,28 +121,31 @@ function validateProjectFields(fields: Partial<ProjectInput>) {
   for (const f of REQUIRED_PROJECT_FIELDS) {
     if (!norm(fields[f])) throw new Error(`必填字段缺失：${PROJECT_FIELD_LABELS[f] ?? f}`)
   }
+  if (fields.projectStatus === '中标') {
+    if (!norm(fields.solution)) throw new Error('中标时必须确认解决方案')
+    if (!norm(fields.subSolution)) throw new Error('中标时必须确认细分解决方案')
+    if (!fields.purchasedProducts?.length) throw new Error('中标时至少选择一个已购产品')
+  }
 }
 
 /** 字典平铺 → 树 */
 function buildTree(items: DictNode[]): DictNode[] {
-  const roots = items
-    .filter((d) => d.parentId == null)
-    .sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id)
-    .map((d) => ({ ...d }))
-  for (const root of roots) {
-    const children = items
-      .filter((d) => d.parentId === root.id)
+  const build = (parentId: ID | null): DictNode[] => items
+      .filter((d) => d.parentId === parentId)
       .sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id)
-      .map((d) => ({ ...d }))
-    if (children.length) root.children = children
-  }
-  return roots
+      .map((d) => {
+        const children = build(d.id)
+        return { ...d, ...(children.length ? { children } : {}) }
+      })
+  return build(null)
 }
 
 function dictUsageCount(item: DictNode): number {
   return db.projects.filter(alive).filter((p) => {
     if (item.type === 'track') return p.track === item.value
     if (item.type === 'solution') return p.solution === item.value
+    if (item.type === 'sub_solution') return p.subSolution === item.value
+    if (item.type === 'product') return p.purchasedProducts.includes(item.value)
     if (item.type === 'industry') return p.industry === item.value
     if (item.type === 'sub_industry') return p.subIndustry === item.value
     if (item.type === 'safety_space') return p.safetySpace === item.value
@@ -147,6 +160,7 @@ export const mockApi: ApiClient = {
       let list = db.projects.filter((p) => (q.deleted ? p.deleted : alive(p)))
       if (q.industry) list = list.filter((p) => p.industry === q.industry)
       if (q.track) list = list.filter((p) => p.track === q.track)
+      if (q.projectStatus) list = list.filter((p) => p.projectStatus === q.projectStatus)
       if (q.keyword) {
         const kw = q.keyword.toLowerCase()
         list = list.filter(
@@ -383,11 +397,12 @@ export const mockApi: ApiClient = {
       const items = db.dictionaries.filter((d) => {
         if (!type) return true
         if (type === 'industry') return d.type === 'industry' || d.type === 'sub_industry'
+        if (type === 'solution') return ['solution', 'sub_solution', 'product'].includes(d.type)
         return d.type === type
       })
       // type=sub_industry 单独查询时按 parentId 挂到空树外的平铺（返回顶层为空则平铺返回）
       const tree = buildTree(items.filter((d) => d.type !== 'sub_industry' || type === 'industry' || !type))
-      if (type && type !== 'industry') {
+      if (type && type !== 'industry' && type !== 'solution') {
         return items
           .filter((d) => d.type === type)
           .sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id)
@@ -426,6 +441,7 @@ export const mockApi: ApiClient = {
           const field =
             item.type === 'track' ? 'track'
             : item.type === 'solution' ? 'solution'
+            : item.type === 'sub_solution' ? 'subSolution'
             : item.type === 'industry' ? 'industry'
             : item.type === 'sub_industry' ? 'subIndustry'
             : item.type === 'safety_space' ? 'safetySpace'
@@ -433,6 +449,10 @@ export const mockApi: ApiClient = {
           if (field && (p as unknown as Record<string, unknown>)[field] === item.value) {
             db.changeLogs.push({ id: nextId(), projectId: p.id, operator: '我', field, oldValue: item.value, newValue: nv, source: 'manual', createdAt: now() })
             ;(p as unknown as Record<string, unknown>)[field] = nv
+          }
+          if (item.type === 'product' && p.purchasedProducts.includes(item.value)) {
+            p.purchasedProducts = p.purchasedProducts.map((product) => product === item.value ? nv : product)
+            db.changeLogs.push({ id: nextId(), projectId: p.id, operator: '我', field: 'purchasedProducts', oldValue: item.value, newValue: nv, source: 'manual', createdAt: now() })
           }
         }
         item.value = nv
@@ -604,8 +624,11 @@ export const mockApi: ApiClient = {
             if (!dryRun) {
               const p: Project = {
                 externalId: null,
+                projectStatus: '机会点识别',
                 safetySpace: '',
                 solution: '',
+                subSolution: '',
+                purchasedProducts: [],
                 track: '',
                 industry: '',
                 subIndustry: '',
@@ -634,8 +657,11 @@ export const mockApi: ApiClient = {
                 externalId: existing.externalId,
                 customerName: existing.customerName,
                 projectName: existing.projectName,
+                projectStatus: existing.projectStatus ?? '机会点识别',
                 safetySpace: existing.safetySpace,
                 solution: existing.solution,
+                subSolution: existing.subSolution ?? '',
+                purchasedProducts: [...(existing.purchasedProducts ?? [])],
                 track: existing.track,
                 industry: existing.industry,
                 subIndustry: existing.subIndustry,

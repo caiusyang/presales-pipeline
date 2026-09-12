@@ -19,10 +19,10 @@
 
 | 参数 | 说明 |
 |---|---|
-| `industry` / `track` / `keyword` | 行业、赛道、关键字筛选 |
+| `industry` / `track` / `projectStatus` / `keyword` | 行业、赛道、项目状态、关键字筛选 |
 | `startMonth` / `endMonth` | `YYYY-MM`；筛选期间有收入的项目，并按该期间计算 `revenueTotal` |
 | `page` / `size` | 从 0 开始；每页 1～200 条 |
-| `sortBy` | `id/customerName/projectName/industry/track/createdAt/updatedAt` |
+| `sortBy` | `id/customerName/projectName/projectStatus/industry/track/createdAt/updatedAt` |
 | `sortDirection` | `asc` 或 `desc` |
 | `deleted` | `false` 查活动项目，`true` 查回收站 |
 
@@ -37,8 +37,11 @@
   "externalId": "CRM-001",
   "customerName": "示例客户",
   "projectName": "数据安全治理",
+  "projectStatus": "中标",
   "safetySpace": "数据域",
   "solution": "安全咨询",
+  "subSolution": "数据安全规划",
+  "purchasedProducts": ["数据分类分级平台", "数据脱敏系统"],
   "track": "数据安全",
   "industry": "金融",
   "subIndustry": "银行",
@@ -50,6 +53,8 @@
   }
 }
 ```
+
+`projectStatus` 仅支持 `机会点识别`、`方案引导`、`方案设计`、`中标`，省略时默认为`机会点识别`。状态为`中标`时，`solution`、`subSolution` 和至少一个 `purchasedProducts` 必填；状态回退时这些信息会保留。
 
 ### `GET /api/projects/{id}/detail`
 
@@ -114,7 +119,8 @@
 
 ## 字典
 
-- `GET /api/dictionaries?type=industry`：树查询；行业节点会带子行业 `children`。
+- `GET /api/dictionaries?type=industry`：行业→子行业树。
+- `GET /api/dictionaries?type=solution`：解决方案→细分解决方案→产品三级树。
 - `POST /api/dictionaries`：创建。
 - `PUT /api/dictionaries/{id}`：修改；改名会同步更新所有引用项目并写修改日志。
 - `DELETE /api/dictionaries/{id}`：软删除；有下级或项目引用时返回 409。
@@ -128,6 +134,8 @@
   "sortOrder": 20
 }
 ```
+
+方案目录的类型依次为 `solution`、`sub_solution`、`product`，后两级创建时必须传对应上级的 `parentId`。
 
 `type` 使用小写字母、数字和下划线。内置业务类型包括 `track`、`solution`、`industry`、`sub_industry`，也可配置 `safety_space`。
 

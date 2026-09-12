@@ -82,8 +82,11 @@ public class BackupService {
         row.put("externalId", project.getExternalId());
         row.put("customerName", project.getCustomerName());
         row.put("projectName", project.getProjectName());
+        row.put("projectStatus", project.getProjectStatus());
         row.put("safetySpace", project.getSafetySpace());
         row.put("solution", project.getSolution());
+        row.put("subSolution", project.getSubSolution());
+        row.put("purchasedProducts", project.getPurchasedProducts());
         row.put("track", project.getTrack());
         row.put("industry", project.getIndustry());
         row.put("subIndustry", project.getSubIndustry());

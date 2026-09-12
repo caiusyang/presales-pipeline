@@ -111,7 +111,14 @@ export function seedDB(): MockDB {
       dictionaries.push({ id: seq++, type: 'sub_industry', value: s, parentId: pid, sortOrder: (i + 1) * 10 }),
     )
   }
-  SOLUTIONS.forEach((s, i) => dictionaries.push({ id: seq++, type: 'solution', value: s, parentId: null, sortOrder: (i + 1) * 10 }))
+  SOLUTIONS.forEach((s, i) => {
+    const solutionId = seq++
+    dictionaries.push({ id: solutionId, type: 'solution', value: s, parentId: null, sortOrder: (i + 1) * 10 })
+    const subId = seq++
+    dictionaries.push({ id: subId, type: 'sub_solution', value: `${s}标准方案`, parentId: solutionId, sortOrder: 10 })
+    dictionaries.push({ id: seq++, type: 'product', value: `${s}基础版`, parentId: subId, sortOrder: 10 })
+    dictionaries.push({ id: seq++, type: 'product', value: `${s}高级版`, parentId: subId, sortOrder: 20 })
+  })
 
   const customFieldDefs: CustomFieldDef[] = [
     { id: seq++, fieldKey: 'expected_sign_date', label: '预计签约日期', fieldType: 'date', required: false, options: [], sortOrder: 10 },
@@ -142,8 +149,11 @@ export function seedDB(): MockDB {
         externalId: rand() > 0.4 ? `EXT-${1000 + ci * 10 + k}` : null,
         customerName: customer,
         projectName: `${customer}${suffix}${k > 0 ? '（二期）' : ''}`,
+        projectStatus: '机会点识别',
         safetySpace: rand() > 0.5 ? '预算内' : '待确认',
         solution,
+        subSolution: '',
+        purchasedProducts: [],
         track,
         industry,
         subIndustry,

@@ -26,6 +26,7 @@ import type {
 export interface ProjectListQuery {
   industry?: string
   track?: string
+  projectStatus?: string
   keyword?: string
   /** YYYY-MM；筛选期间有收入的项目，revenueTotal 按该期间计算 */
   startMonth?: MonthStr

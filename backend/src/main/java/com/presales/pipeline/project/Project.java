@@ -8,6 +8,8 @@ import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
 import java.util.LinkedHashMap;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 
 @Entity
@@ -23,10 +25,20 @@ public class Project extends SoftDeletableEntity {
     @Column(name = "project_name", nullable = false)
     private String projectName;
 
+    @Column(name = "project_status", length = 32)
+    private String projectStatus = "机会点识别";
+
     @Column(name = "safety_space")
     private String safetySpace;
 
     private String solution;
+
+    @Column(name = "sub_solution")
+    private String subSolution;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "purchased_products", columnDefinition = "json")
+    private List<String> purchasedProducts = new ArrayList<>();
 
     private String track;
 
@@ -75,6 +87,14 @@ public class Project extends SoftDeletableEntity {
         this.projectName = projectName;
     }
 
+    public String getProjectStatus() {
+        return projectStatus == null ? "机会点识别" : projectStatus;
+    }
+
+    public void setProjectStatus(String projectStatus) {
+        this.projectStatus = projectStatus;
+    }
+
     public String getSafetySpace() {
         return safetySpace;
     }
@@ -89,6 +109,35 @@ public class Project extends SoftDeletableEntity {
 
     public void setSolution(String solution) {
         this.solution = solution;
+    }
+
+    public String getSubSolution() {
+        return subSolution;
+    }
+
+    public void setSubSolution(String subSolution) {
+        this.subSolution = subSolution;
+    }
+
+    public List<String> getPurchasedProducts() {
+        return purchasedProducts == null ? List.of() : purchasedProducts;
+    }
+
+    public void setPurchasedProducts(List<String> purchasedProducts) {
+        this.purchasedProducts = purchasedProducts == null ? new ArrayList<>() : new ArrayList<>(purchasedProducts);
+    }
+
+    boolean initializeLegacyDefaults() {
+        boolean changed = false;
+        if (projectStatus == null) {
+            projectStatus = "机会点识别";
+            changed = true;
+        }
+        if (purchasedProducts == null) {
+            purchasedProducts = new ArrayList<>();
+            changed = true;
+        }
+        return changed;
     }
 
     public String getTrack() {

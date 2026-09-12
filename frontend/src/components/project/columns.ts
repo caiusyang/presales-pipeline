@@ -19,7 +19,7 @@ export interface ColumnState {
 const STORAGE_KEY = 'pipeline-columns-v1'
 
 /** 支持排序的列（与后端 sortBy 对齐） */
-const SORTABLE_KEYS = new Set(['customerName', 'projectName', 'industry', 'track', 'createdAt', 'updatedAt'])
+const SORTABLE_KEYS = new Set(['customerName', 'projectName', 'projectStatus', 'industry', 'track', 'createdAt', 'updatedAt'])
 
 export function isSortableColumn(key: string): boolean {
   return SORTABLE_KEYS.has(key)

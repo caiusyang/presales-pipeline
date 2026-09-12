@@ -15,9 +15,12 @@ export interface Project {
   externalId: string | null
   customerName: string
   projectName: string
+  projectStatus: ProjectStatus
   /** 安全空间 */
   safetySpace: string
   solution: string
+  subSolution: string
+  purchasedProducts: string[]
   track: string
   industry: string
   subIndustry: string
@@ -34,6 +37,9 @@ export interface Project {
 }
 
 export type ProjectInput = Omit<Project, 'id' | 'revenueTotal' | 'deleted' | 'createdAt' | 'updatedAt'>
+
+export const PROJECT_STATUSES = ['机会点识别', '方案引导', '方案设计', '中标'] as const
+export type ProjectStatus = (typeof PROJECT_STATUSES)[number]
 
 // ---------- 收入 ----------
 export interface Revenue {
@@ -70,7 +76,7 @@ export interface ChangeLog {
 }
 
 // ---------- 字典（树节点；行业节点的 children 为子行业） ----------
-export type DictType = 'track' | 'industry' | 'sub_industry' | 'solution' | 'safety_space' | string
+export type DictType = 'track' | 'industry' | 'sub_industry' | 'solution' | 'sub_solution' | 'product' | 'safety_space' | string
 export interface DictNode {
   id: ID
   type: DictType

@@ -35,10 +35,15 @@ import java.util.Set;
 @Service
 public class ProjectService {
 
+    public static final String DEFAULT_STATUS = "机会点识别";
+    public static final String WON_STATUS = "中标";
+    public static final List<String> PROJECT_STATUSES = List.of("机会点识别", "方案引导", "方案设计", WON_STATUS);
+
     private static final Map<String, String> SORT_FIELDS = Map.of(
             "id", "id",
             "customerName", "customerName",
             "projectName", "projectName",
+            "projectStatus", "projectStatus",
             "industry", "industry",
             "track", "track",
             "createdAt", "createdAt",
@@ -72,6 +77,7 @@ public class ProjectService {
     @Transactional(readOnly = true)
     public PageData<ProjectResponse> list(String industry,
                                           String track,
+                                          String projectStatus,
                                           String keyword,
                                           String startMonth,
                                           String endMonth,
@@ -92,7 +98,7 @@ public class ProjectService {
         String property = SORT_FIELDS.getOrDefault(sortBy, "updatedAt");
         Sort.Direction direction = "asc".equalsIgnoreCase(sortDirection) ? Sort.Direction.ASC : Sort.Direction.DESC;
         Page<Project> result = projectRepository.findAll(
-                ProjectSpecifications.filter(industry, track, keyword, start, end, deleted),
+                ProjectSpecifications.filter(industry, track, projectStatus, keyword, start, end, deleted),
                 PageRequest.of(page, size, Sort.by(direction, property)));
 
         List<Long> ids = result.getContent().stream().map(Project::getId).toList();
@@ -177,8 +183,14 @@ public class ProjectService {
         changeAndSet(project, "externalId", project.getExternalId(), normalized.externalId(), project::setExternalId, source);
         changeAndSet(project, "customerName", project.getCustomerName(), normalized.customerName(), project::setCustomerName, source);
         changeAndSet(project, "projectName", project.getProjectName(), normalized.projectName(), project::setProjectName, source);
+        changeAndSet(project, "projectStatus", project.getProjectStatus(), normalized.projectStatus(), project::setProjectStatus, source);
         changeAndSet(project, "safetySpace", project.getSafetySpace(), normalized.safetySpace(), project::setSafetySpace, source);
         changeAndSet(project, "solution", project.getSolution(), normalized.solution(), project::setSolution, source);
+        changeAndSet(project, "subSolution", project.getSubSolution(), normalized.subSolution(), project::setSubSolution, source);
+        if (changeLogService.logIfChanged(project, "purchasedProducts", project.getPurchasedProducts(),
+                normalized.purchasedProducts(), source)) {
+            project.setPurchasedProducts(normalized.purchasedProducts());
+        }
         changeAndSet(project, "track", project.getTrack(), normalized.track(), project::setTrack, source);
         changeAndSet(project, "industry", project.getIndustry(), normalized.industry(), project::setIndustry, source);
         changeAndSet(project, "subIndustry", project.getSubIndustry(), normalized.subIndustry(), project::setSubIndustry, source);
@@ -202,7 +214,8 @@ public class ProjectService {
 
     public ProjectResponse toResponse(Project project, BigDecimal revenueTotal) {
         return new ProjectResponse(project.getId(), project.getExternalId(), project.getCustomerName(),
-                project.getProjectName(), project.getSafetySpace(), project.getSolution(), project.getTrack(),
+                project.getProjectName(), project.getProjectStatus(), project.getSafetySpace(), project.getSolution(),
+                project.getSubSolution(), project.getPurchasedProducts(), project.getTrack(),
                 project.getIndustry(), project.getSubIndustry(), project.getScenario(), project.getKeyRisks(),
                 project.getKeyNeeds(), project.getCustomFields(), revenueTotal, project.isDeleted(),
                 project.getCreatedAt(), project.getUpdatedAt());
@@ -212,6 +225,13 @@ public class ProjectService {
         String externalId = cleanNullable(request.externalId());
         String customerName = request.customerName().trim();
         String projectName = request.projectName().trim();
+        String projectStatus = cleanNullable(request.projectStatus());
+        if (projectStatus == null) {
+            projectStatus = DEFAULT_STATUS;
+        }
+        if (!PROJECT_STATUSES.contains(projectStatus)) {
+            throw BusinessException.badRequest("项目状态只能是：" + String.join("、", PROJECT_STATUSES));
+        }
         if (externalId != null && projectRepository.existsByExternalIdAndIdNot(externalId, idOrSentinel(currentId))) {
             throw BusinessException.conflict("外部系统编号已被其他项目使用");
         }
@@ -222,13 +242,28 @@ public class ProjectService {
 
         String safetySpace = cleanNullable(request.safetySpace());
         String solution = cleanNullable(request.solution());
+        String subSolution = cleanNullable(request.subSolution());
+        List<String> purchasedProducts = normalizeProducts(request.purchasedProducts());
         String track = cleanNullable(request.track());
         String industry = cleanNullable(request.industry());
         String subIndustry = cleanNullable(request.subIndustry());
-        dictionaryService.validateProjectSelections(safetySpace, solution, track, industry, subIndustry);
+        dictionaryService.validateProjectSelections(safetySpace, solution, subSolution, purchasedProducts,
+                track, industry, subIndustry);
+        if (WON_STATUS.equals(projectStatus)) {
+            if (solution == null) {
+                throw BusinessException.badRequest("中标时必须确认解决方案");
+            }
+            if (subSolution == null) {
+                throw BusinessException.badRequest("中标时必须确认细分解决方案");
+            }
+            if (purchasedProducts.isEmpty()) {
+                throw BusinessException.badRequest("中标时至少选择一个已购产品");
+            }
+        }
         Map<String, Object> customFields = configService.normalizeAndValidateCustomFields(request.customFields());
 
-        return new NormalizedProject(externalId, customerName, projectName, safetySpace, solution, track,
+        return new NormalizedProject(externalId, customerName, projectName, projectStatus, safetySpace, solution,
+                subSolution, purchasedProducts, track,
                 industry, subIndustry, cleanNullable(request.scenario()), cleanNullable(request.keyRisks()),
                 cleanNullable(request.keyNeeds()), customFields);
     }
@@ -241,8 +276,11 @@ public class ProjectService {
         project.setExternalId(value.externalId());
         project.setCustomerName(value.customerName());
         project.setProjectName(value.projectName());
+        project.setProjectStatus(value.projectStatus());
         project.setSafetySpace(value.safetySpace());
         project.setSolution(value.solution());
+        project.setSubSolution(value.subSolution());
+        project.setPurchasedProducts(value.purchasedProducts());
         project.setTrack(value.track());
         project.setIndustry(value.industry());
         project.setSubIndustry(value.subIndustry());
@@ -285,6 +323,20 @@ public class ProjectService {
         return value.trim();
     }
 
+    private List<String> normalizeProducts(List<String> values) {
+        if (values == null) {
+            return List.of();
+        }
+        LinkedHashSet<String> normalized = new LinkedHashSet<>();
+        for (String value : values) {
+            String cleaned = cleanNullable(value);
+            if (cleaned != null) {
+                normalized.add(cleaned);
+            }
+        }
+        return List.copyOf(normalized);
+    }
+
     private ProgressResponse toProgressResponse(ProgressLog log) {
         return new ProgressResponse(log.getId(), log.getProject().getId(), log.getLogDate(), log.getContent(),
                 log.getCreatedAt(), log.getUpdatedAt());
@@ -304,8 +356,11 @@ public class ProjectService {
             String externalId,
             String customerName,
             String projectName,
+            String projectStatus,
             String safetySpace,
             String solution,
+            String subSolution,
+            List<String> purchasedProducts,
             String track,
             String industry,
             String subIndustry,

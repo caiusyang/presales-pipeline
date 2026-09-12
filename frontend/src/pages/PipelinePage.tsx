@@ -17,11 +17,12 @@ import { ColumnConfigMenu } from '@/components/project/ColumnConfigMenu'
 import { ProjectDetailDrawer } from '@/components/project/ProjectDetailDrawer'
 import { ProjectFormDialog } from '@/components/project/ProjectFormDialog'
 import { ProjectTable } from '@/components/project/ProjectTable'
+import { WinProjectDialog } from '@/components/project/WinProjectDialog'
 import { useCustomFieldDefs, useDictionaries, useProjectMutations, useProjects } from '@/hooks/queries'
 import { industryCascade } from '@/lib/fields'
 import { cn } from '@/lib/utils'
 import type { ProjectListQuery } from '@/api/types'
-import type { ID, Project } from '@/types'
+import { PROJECT_STATUSES, type ID, type Project } from '@/types'
 
 export default function PipelinePage() {
   // ---------- 筛选状态 ----------
@@ -29,6 +30,7 @@ export default function PipelinePage() {
   const [debouncedKeyword, setDebouncedKeyword] = useState('')
   const [industry, setIndustry] = useState('')
   const [track, setTrack] = useState('')
+  const [projectStatus, setProjectStatus] = useState('')
   const [startMonth, setStartMonth] = useState('')
   const [endMonth, setEndMonth] = useState('')
   const [recycleBin, setRecycleBin] = useState(false)
@@ -43,6 +45,7 @@ export default function PipelinePage() {
   const [detailId, setDetailId] = useState<ID | null>(null)
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<Project | null>(null)
+  const [winTarget, setWinTarget] = useState<Project | null>(null)
 
   // 关键字防抖 300ms
   useEffect(() => {
@@ -53,7 +56,7 @@ export default function PipelinePage() {
   // 筛选/回收站/每页条数变化回到第 1 页
   useEffect(() => {
     setPage(0)
-  }, [debouncedKeyword, industry, track, startMonth, endMonth, recycleBin, size])
+  }, [debouncedKeyword, industry, track, projectStatus, startMonth, endMonth, recycleBin, size])
 
   // ---------- 数据 ----------
   const query: ProjectListQuery = {
@@ -62,6 +65,7 @@ export default function PipelinePage() {
     ...(debouncedKeyword ? { keyword: debouncedKeyword } : {}),
     ...(industry ? { industry } : {}),
     ...(track ? { track } : {}),
+    ...(projectStatus ? { projectStatus } : {}),
     ...(startMonth ? { startMonth } : {}),
     ...(endMonth ? { endMonth } : {}),
     ...(recycleBin ? { deleted: true } : {}),
@@ -155,6 +159,15 @@ export default function PipelinePage() {
           clearable
           clearLabel="全部赛道"
         />
+        <Select
+          className="w-40"
+          value={projectStatus}
+          onValueChange={setProjectStatus}
+          options={PROJECT_STATUSES.map((status) => ({ value: status, label: status }))}
+          placeholder="项目状态"
+          clearable
+          clearLabel="全部状态"
+        />
         <div className="flex items-center gap-1">
           <Input
             type="month"
@@ -226,6 +239,7 @@ export default function PipelinePage() {
             onSort={toggleSort}
             onOpenDetail={openDetail}
             onRequestDelete={setDeleteTarget}
+            onRequestWin={setWinTarget}
           />
         )}
       </div>
@@ -264,6 +278,11 @@ export default function PipelinePage() {
       {/* ---------- 弹层 ---------- */}
       <ProjectFormDialog open={createOpen} onOpenChange={setCreateOpen} />
       <ProjectDetailDrawer projectId={detailId} open={drawerOpen} onOpenChange={setDrawerOpen} />
+      <WinProjectDialog
+        project={winTarget}
+        open={winTarget != null}
+        onOpenChange={(open) => !open && setWinTarget(null)}
+      />
       <ConfirmDialog
         open={deleteTarget != null}
         onOpenChange={(o) => !o && setDeleteTarget(null)}

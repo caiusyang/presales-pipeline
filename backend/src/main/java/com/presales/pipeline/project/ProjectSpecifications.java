@@ -16,6 +16,7 @@ public final class ProjectSpecifications {
 
     public static Specification<Project> filter(String industry,
                                                 String track,
+                                                String projectStatus,
                                                 String keyword,
                                                 String startMonth,
                                                 String endMonth,
@@ -29,6 +30,9 @@ public final class ProjectSpecifications {
             }
             if (track != null && !track.isBlank()) {
                 predicates.add(builder.equal(root.get("track"), track.trim()));
+            }
+            if (projectStatus != null && !projectStatus.isBlank()) {
+                predicates.add(builder.equal(root.get("projectStatus"), projectStatus.trim()));
             }
             if (keyword != null && !keyword.isBlank()) {
                 String pattern = "%" + keyword.trim().toLowerCase(Locale.ROOT) + "%";

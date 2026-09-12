@@ -1,6 +1,7 @@
 import { useRef, useState, type MouseEvent } from 'react'
 import dayjs from 'dayjs'
-import { ArrowDown, ArrowUp, ArrowUpDown, Eye, RotateCcw, Trash2 } from 'lucide-react'
+import { ArrowDown, ArrowUp, ArrowUpDown, Eye, RotateCcw, Trash2, Trophy } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, type SelectOption } from '@/components/ui/select'
@@ -15,7 +16,7 @@ import {
 import { isSortableColumn, type PipelineColumn } from '@/components/project/columns'
 import { applyFieldEdit, normalizeForSubmit, projectToInput } from '@/components/project/project-utils'
 import { useCustomFieldDefs, useDictionaries, useProjectMutations } from '@/hooks/queries'
-import { getProjectFieldValue, industryCascade } from '@/lib/fields'
+import { getProjectFieldValue, industryCascade, solutionCascade } from '@/lib/fields'
 import { fmtAmount } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import type { ID, Project } from '@/types'
@@ -30,6 +31,7 @@ interface Props {
   onSort: (key: string) => void
   onOpenDetail: (id: ID) => void
   onRequestDelete: (p: Project) => void
+  onRequestWin: (p: Project) => void
 }
 
 interface Editing {
@@ -48,6 +50,7 @@ export function ProjectTable({
   onSort,
   onOpenDetail,
   onRequestDelete,
+  onRequestWin,
 }: Props) {
   const [editing, setEditing] = useState<Editing | null>(null)
   const clickTimer = useRef<number | null>(null)
@@ -59,15 +62,17 @@ export function ProjectTable({
   const customDefsQ = useCustomFieldDefs()
 
   const cascade = industryCascade(industryQ.data ?? [])
+  const solutions = solutionCascade(solutionQ.data ?? [])
 
-  const isEditable = (key: string) => !recycleBin && key !== 'revenueTotal'
+  const isEditable = (key: string) => !recycleBin && !['revenueTotal', 'projectStatus', 'purchasedProducts'].includes(key)
 
   const dictOptionsFor = (key: string, row: Project): SelectOption[] | null => {
     const toOptions = (values: string[]) => values.map((v) => ({ value: v, label: v }))
     if (key === 'industry') return toOptions(cascade.industries.map((n) => n.value))
     if (key === 'subIndustry') return toOptions((cascade.subMap.get(row.industry) ?? []).map((n) => n.value))
     if (key === 'track') return toOptions((trackQ.data ?? []).map((n) => n.value))
-    if (key === 'solution') return toOptions((solutionQ.data ?? []).map((n) => n.value))
+    if (key === 'solution') return toOptions(solutions.solutions.map((n) => n.value))
+    if (key === 'subSolution') return toOptions((solutions.subMap.get(row.solution) ?? []).map((n) => n.value))
     return null
   }
 
@@ -166,7 +171,7 @@ export function ProjectTable({
       <TableHeader>
         <TableRow>
           {columns.map(renderHead)}
-          <TableHead className="w-28 text-right">操作</TableHead>
+          <TableHead className="w-48 text-right">操作</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -207,6 +212,14 @@ export function ProjectTable({
                 </div>
               ) : (
                 <div className="flex justify-end gap-1">
+                  {p.projectStatus === '中标' ? (
+                    <Badge variant="success" className="self-center">已中标</Badge>
+                  ) : (
+                    <Button variant="outline" size="xs" onClick={() => onRequestWin(p)}>
+                      <Trophy className="h-3.5 w-3.5 text-amber-500" />
+                      中标
+                    </Button>
+                  )}
                   <Button variant="ghost" size="xs" onClick={() => onOpenDetail(p.id)}>
                     <Eye className="h-3.5 w-3.5" />
                     详情

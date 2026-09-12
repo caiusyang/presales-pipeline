@@ -40,7 +40,9 @@ public class ExportService {
     private static final Map<String, List<ExportFieldResponse>> STANDARD_FIELDS = Map.of(
             ExportScope.PROJECTS, List.of(
                     field("id", "项目ID"), field("externalId", "外部系统编号"), field("customerName", "客户名称"),
-                    field("projectName", "项目名称"), field("safetySpace", "安全空间"), field("solution", "解决方案"),
+                    field("projectName", "项目名称"), field("projectStatus", "项目状态"),
+                    field("safetySpace", "安全空间"), field("solution", "解决方案"),
+                    field("subSolution", "细分解决方案"), field("purchasedProducts", "已购产品"),
                     field("track", "赛道"), field("industry", "行业"), field("subIndustry", "子行业"),
                     field("scenario", "场景"), field("keyRisks", "关键风险"), field("keyNeeds", "关键需求"),
                     field("revenueTotal", "收入合计（万元）"), field("createdAt", "创建时间"), field("updatedAt", "更新时间")
@@ -217,8 +219,11 @@ public class ExportService {
             case "externalId" -> project.getExternalId();
             case "customerName" -> project.getCustomerName();
             case "projectName" -> project.getProjectName();
+            case "projectStatus" -> project.getProjectStatus();
             case "safetySpace" -> project.getSafetySpace();
             case "solution" -> project.getSolution();
+            case "subSolution" -> project.getSubSolution();
+            case "purchasedProducts" -> String.join("、", project.getPurchasedProducts());
             case "track" -> project.getTrack();
             case "industry" -> project.getIndustry();
             case "subIndustry" -> project.getSubIndustry();

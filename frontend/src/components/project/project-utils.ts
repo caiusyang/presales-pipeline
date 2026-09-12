@@ -10,8 +10,11 @@ export function emptyProjectInput(): ProjectInput {
     externalId: null,
     customerName: '',
     projectName: '',
+    projectStatus: '机会点识别',
     safetySpace: '',
     solution: '',
+    subSolution: '',
+    purchasedProducts: [],
     track: '',
     industry: '',
     subIndustry: '',
@@ -28,14 +31,17 @@ export function projectToInput(p: Project): ProjectInput {
     externalId: p.externalId,
     customerName: p.customerName,
     projectName: p.projectName,
-    safetySpace: p.safetySpace,
-    solution: p.solution,
-    track: p.track,
-    industry: p.industry,
-    subIndustry: p.subIndustry,
-    scenario: p.scenario,
-    keyNeeds: p.keyNeeds,
-    keyRisks: p.keyRisks,
+    projectStatus: p.projectStatus ?? '机会点识别',
+    safetySpace: p.safetySpace ?? '',
+    solution: p.solution ?? '',
+    subSolution: p.subSolution ?? '',
+    purchasedProducts: [...(p.purchasedProducts ?? [])],
+    track: p.track ?? '',
+    industry: p.industry ?? '',
+    subIndustry: p.subIndustry ?? '',
+    scenario: p.scenario ?? '',
+    keyNeeds: p.keyNeeds ?? '',
+    keyRisks: p.keyRisks ?? '',
     customFields: { ...(p.customFields ?? {}) },
   }
 }
@@ -44,6 +50,11 @@ export function projectToInput(p: Project): ProjectInput {
 export function validateProjectInput(input: ProjectInput, customDefs: CustomFieldDef[]): string | null {
   for (const key of REQUIRED_PROJECT_FIELDS) {
     if (!String(input[key] ?? '').trim()) return `请填写${PROJECT_FIELD_LABELS[key] ?? key}`
+  }
+  if (input.projectStatus === '中标') {
+    if (!input.solution.trim()) return '中标时请选择解决方案'
+    if (!input.subSolution.trim()) return '中标时请选择细分解决方案'
+    if (input.purchasedProducts.length === 0) return '中标时至少选择一个已购产品'
   }
   for (const def of customDefs) {
     if (!def.required) continue
@@ -78,6 +89,15 @@ export function applyFieldEdit(input: ProjectInput, key: string, value: string):
   }
   if (key === 'industry') {
     return { ...input, industry: value, subIndustry: '' }
+  }
+  if (key === 'solution') {
+    return { ...input, solution: value, subSolution: '', purchasedProducts: [] }
+  }
+  if (key === 'subSolution') {
+    return { ...input, subSolution: value, purchasedProducts: [] }
+  }
+  if (key === 'purchasedProducts') {
+    return { ...input, purchasedProducts: value.split(/[、,，]/).map((v) => v.trim()).filter(Boolean) }
   }
   return { ...input, [key]: value }
 }

@@ -30,6 +30,7 @@ public class ProjectController {
     public ApiResponse<PageData<ProjectResponse>> list(
             @RequestParam(required = false) String industry,
             @RequestParam(required = false) String track,
+            @RequestParam(required = false) String projectStatus,
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) String startMonth,
             @RequestParam(required = false) String endMonth,
@@ -38,7 +39,7 @@ public class ProjectController {
             @RequestParam(defaultValue = "updatedAt") String sortBy,
             @RequestParam(defaultValue = "desc") String sortDirection,
             @RequestParam(defaultValue = "false") boolean deleted) {
-        return ApiResponse.success(service.list(industry, track, keyword, startMonth, endMonth,
+        return ApiResponse.success(service.list(industry, track, projectStatus, keyword, startMonth, endMonth,
                 page, size, sortBy, sortDirection, deleted));
     }
 
