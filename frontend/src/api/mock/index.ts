@@ -7,6 +7,7 @@ import type {
   ProgressLog,
   Project,
   ProjectInput,
+  ProjectProductRecord,
   Revenue,
 } from '@/types'
 import type {
@@ -25,6 +26,7 @@ import type {
 } from '@/api/types'
 import { PROJECT_FIELD_LABELS, REQUIRED_PROJECT_FIELDS } from '@/lib/fields'
 import { DATE_RE, MONTH_RE } from '@/lib/format'
+import { normalizeProductCode, PRODUCT_CATALOG } from '@/lib/products'
 import { seedDB, type MockDB } from './seed'
 
 // ============================================================
@@ -121,6 +123,8 @@ function validateProjectFields(fields: Partial<ProjectInput>) {
   for (const f of REQUIRED_PROJECT_FIELDS) {
     if (!norm(fields[f])) throw new Error(`必填字段缺失：${PROJECT_FIELD_LABELS[f] ?? f}`)
   }
+  const invalidProduct = (fields.purchasedProducts ?? []).find((product) => !normalizeProductCode(product))
+  if (invalidProduct) throw new Error(`已购产品只能是：${PRODUCT_CATALOG.join('、')}`)
   if (fields.projectStatus === '中标') {
     if (!norm(fields.solution)) throw new Error('中标时必须确认解决方案')
     if (!norm(fields.subSolution)) throw new Error('中标时必须确认细分解决方案')
@@ -205,6 +209,13 @@ export const mockApi: ApiClient = {
         progress: db.progressLogs
           .filter((l) => l.projectId === id)
           .sort((a, b) => (a.logDate === b.logDate ? b.id - a.id : b.logDate.localeCompare(a.logDate))),
+        products: (project.purchasedProducts ?? []).map((productCode, index): ProjectProductRecord => ({
+          id: project.id * 100 + index + 1,
+          projectId: project.id,
+          productCode,
+          createdAt: project.updatedAt,
+          updatedAt: project.updatedAt,
+        })),
         revenues: db.revenues.filter((r) => r.projectId === id).sort((a, b) => a.month.localeCompare(b.month)),
         changeLogs: db.changeLogs
           .filter((c) => c.projectId === id)
@@ -414,16 +425,19 @@ export const mockApi: ApiClient = {
 
   createDictItem(input) {
     return delay(() => {
+      const value = input.type === 'product' ? normalizeProductCode(input.value) : norm(input.value)
+      if (!value) {
+        throw new Error(input.type === 'product' ? `已购产品只能是：${PRODUCT_CATALOG.join('、')}` : '字典值不能为空')
+      }
       const dup = db.dictionaries.find(
-        (d) => d.type === input.type && (d.parentId ?? null) === (input.parentId ?? null) && d.value === norm(input.value),
+        (d) => d.type === input.type && (d.parentId ?? null) === (input.parentId ?? null) && d.value === value,
       )
       if (dup) throw new Error('同级下已存在同名字典项')
-      if (!norm(input.value)) throw new Error('字典值不能为空')
       if (input.parentId) {
         const parent = db.dictionaries.find((d) => d.id === input.parentId)
         if (!parent) throw new Error('父级不存在')
       }
-      const item: DictNode = { id: nextId(), type: input.type, value: norm(input.value), parentId: input.parentId ?? null, sortOrder: input.sortOrder, createdAt: now(), updatedAt: now() }
+      const item: DictNode = { id: nextId(), type: input.type, value, parentId: input.parentId ?? null, sortOrder: input.sortOrder, createdAt: now(), updatedAt: now() }
       db.dictionaries.push(item)
       persist()
       return { ...item }
@@ -434,6 +448,9 @@ export const mockApi: ApiClient = {
     return delay(() => {
       const item = db.dictionaries.find((d) => d.id === id)
       if (!item) throw new Error('字典项不存在')
+      if (item.type === 'product' && input.value !== undefined && norm(input.value) !== item.value) {
+        throw new Error('固定产品编码不可重命名，请删除后重新关联')
+      }
       // 改名同步引用并写日志（对齐后端行为）
       if (input.value !== undefined && norm(input.value) !== item.value) {
         const nv = norm(input.value)

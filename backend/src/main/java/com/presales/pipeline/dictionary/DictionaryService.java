@@ -6,6 +6,7 @@ import com.presales.pipeline.dictionary.dto.DictionaryNodeResponse;
 import com.presales.pipeline.dictionary.dto.DictionaryRequest;
 import com.presales.pipeline.project.Project;
 import com.presales.pipeline.project.ProjectRepository;
+import com.presales.pipeline.product.ProductCatalog;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -61,6 +62,9 @@ public class DictionaryService {
     public DictionaryNodeResponse create(DictionaryRequest request) {
         String type = normalizeType(request.type());
         String value = clean(request.value());
+        if ("product".equals(type)) {
+            value = ProductCatalog.normalize(value);
+        }
         DictionaryItem parent = resolveParent(request.parentId(), type, null);
         ensureNoDuplicate(type, value, parent, null);
 
@@ -77,6 +81,9 @@ public class DictionaryService {
         DictionaryItem item = getActive(id);
         String type = normalizeType(request.type());
         String value = clean(request.value());
+        if ("product".equals(type)) {
+            value = ProductCatalog.normalize(value);
+        }
         DictionaryItem parent = resolveParent(request.parentId(), type, id);
         ensureNoDuplicate(type, value, parent, id);
 
@@ -88,6 +95,9 @@ public class DictionaryService {
         Long newParentId = parent == null ? null : parent.getId();
         if (referenced && !Objects.equals(oldParentId, newParentId)) {
             throw BusinessException.conflict("该字典项已被项目引用，不能更换上级");
+        }
+        if ("product".equals(item.getType()) && !item.getValue().equals(value)) {
+            throw BusinessException.conflict("固定产品编码不可重命名，请删除后重新关联");
         }
         if (referenced && !item.getValue().equals(value)) {
             cascadeProjectValue(item, value);

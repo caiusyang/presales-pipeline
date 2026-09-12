@@ -9,13 +9,14 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { EmptyState } from '@/components/common/EmptyState'
 import { cn } from '@/lib/utils'
+import { PRODUCT_CATALOG } from '@/lib/products'
 
 type DictKind = 'track' | 'industry' | 'solution' | 'safety_space'
 
 const DICT_KINDS: { value: DictKind; label: string; hint: string }[] = [
   { value: 'track', label: '赛道', hint: '项目「赛道」字段的可选值' },
   { value: 'industry', label: '行业', hint: '行业为两级结构：顶级行业下可挂子行业' },
-  { value: 'solution', label: '方案与产品', hint: '三级结构：解决方案 → 细分解决方案 → 产品' },
+  { value: 'solution', label: '方案与产品', hint: '三级结构：解决方案 → 细分解决方案 → 固定产品目录' },
   { value: 'safety_space', label: '安全空间', hint: '项目「安全空间」字段的可选值' },
 ]
 
@@ -132,6 +133,14 @@ export function DictManager() {
         ...(data ?? []).map((n) => ({ value: String(n.id), label: `「${n.value}」的子行业` })),
       ]
 
+  const selectedParent = parentChoice === 'top'
+    ? null
+    : rows.find((row) => String(row.node.id) === parentChoice)?.node ?? null
+  const addingProduct = kind === 'solution' && selectedParent?.type === 'sub_solution'
+  const productOptions = PRODUCT_CATALOG
+    .filter((product) => !(selectedParent?.children ?? []).some((child) => child.value === product))
+    .map((product) => ({ value: product, label: product }))
+
   return (
     <div className="space-y-4">
       {/* 类型切换 */}
@@ -153,18 +162,31 @@ export function DictManager() {
 
       {/* 新增 */}
       <div className="flex flex-wrap items-center gap-2">
-        <Input
-          className="w-64"
-          placeholder="名称"
-          value={newValue}
-          onChange={(e) => setNewValue(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
-        />
+        {addingProduct ? (
+          <Select
+            className="w-64"
+            value={newValue}
+            onValueChange={setNewValue}
+            options={productOptions}
+            placeholder="选择固定产品"
+          />
+        ) : (
+          <Input
+            className="w-64"
+            placeholder="名称"
+            value={newValue}
+            onChange={(e) => setNewValue(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
+          />
+        )}
         {(kind === 'industry' || kind === 'solution') && (
           <Select
             className="w-48"
             value={parentChoice}
-            onValueChange={setParentChoice}
+            onValueChange={(value) => {
+              setParentChoice(value)
+              setNewValue('')
+            }}
             options={parentOptions}
           />
         )}
@@ -246,6 +268,7 @@ export function DictManager() {
                       size="icon-sm"
                       variant="ghost"
                       title="重命名"
+                      disabled={row.node.type === 'product'}
                       onClick={() => setEditing({ id: row.node.id, value: row.node.value })}
                     >
                       <Pencil className="h-4 w-4" />

@@ -43,8 +43,18 @@ import {
   useSaveRevenues,
 } from '@/hooks/queries'
 import { fmtAmount, isValidMonth } from '@/lib/format'
+import { PRODUCT_CATALOG } from '@/lib/products'
 import { cn } from '@/lib/utils'
-import type { ChangeLog, CustomFieldDef, ID, ProgressLog, Project, ProjectInput, Revenue } from '@/types'
+import type {
+  ChangeLog,
+  CustomFieldDef,
+  ID,
+  ProgressLog,
+  Project,
+  ProjectInput,
+  ProjectProductRecord,
+  Revenue,
+} from '@/types'
 
 interface Props {
   projectId: ID | null
@@ -82,6 +92,7 @@ export function ProjectDetailDrawer({ projectId, open, onOpenChange }: Props) {
               <TabsList>
                 <TabsTrigger value="overview">概览</TabsTrigger>
                 <TabsTrigger value="progress">进展时间线</TabsTrigger>
+                <TabsTrigger value="products">产品拥有情况</TabsTrigger>
                 <TabsTrigger value="revenue">按月收入</TabsTrigger>
                 <TabsTrigger value="logs">修改日志</TabsTrigger>
               </TabsList>
@@ -90,6 +101,9 @@ export function ProjectDetailDrawer({ projectId, open, onOpenChange }: Props) {
               </TabsContent>
               <TabsContent value="progress">
                 <ProgressTab projectId={project.id} logs={data.progress} />
+              </TabsContent>
+              <TabsContent value="products">
+                <ProductsTab records={data.products ?? []} />
               </TabsContent>
               <TabsContent value="revenue">
                 <RevenueTab projectId={project.id} revenues={data.revenues} />
@@ -102,6 +116,46 @@ export function ProjectDetailDrawer({ projectId, open, onOpenChange }: Props) {
         </DrawerBody>
       </DrawerContent>
     </Drawer>
+  )
+}
+
+// ---------------- 产品拥有情况 ----------------
+
+function ProductsTab({ records }: { records: ProjectProductRecord[] }) {
+  const byCode = new Map(records.map((record) => [record.productCode.toLowerCase(), record]))
+  return (
+    <div className="space-y-3">
+      <div className="text-sm text-muted-foreground">
+        产品目录固定为 9 项。已购产品会在项目产品关系表中保存独立记录。
+      </div>
+      <div className="overflow-hidden rounded-md border">
+        <Table>
+          <TableHeader>
+            <TableRow className="bg-muted/60">
+              <TableHead>产品</TableHead>
+              <TableHead>拥有情况</TableHead>
+              <TableHead>记录时间</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {PRODUCT_CATALOG.map((product) => {
+              const record = byCode.get(product.toLowerCase())
+              return (
+                <TableRow key={product}>
+                  <TableCell className="font-medium">{product}</TableCell>
+                  <TableCell>
+                    <Badge variant={record ? 'success' : 'secondary'}>{record ? '已购' : '未购'}</Badge>
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {record ? dayjs(record.createdAt).format('YYYY-MM-DD HH:mm') : '—'}
+                  </TableCell>
+                </TableRow>
+              )
+            })}
+          </TableBody>
+        </Table>
+      </div>
+    </div>
   )
 }
 

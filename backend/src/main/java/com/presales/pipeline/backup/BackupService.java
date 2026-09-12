@@ -17,6 +17,8 @@ import com.presales.pipeline.progress.ProgressLog;
 import com.presales.pipeline.progress.ProgressLogRepository;
 import com.presales.pipeline.project.Project;
 import com.presales.pipeline.project.ProjectRepository;
+import com.presales.pipeline.product.ProjectProduct;
+import com.presales.pipeline.product.ProjectProductRepository;
 import com.presales.pipeline.revenue.Revenue;
 import com.presales.pipeline.revenue.RevenueRepository;
 import org.springframework.data.domain.Sort;
@@ -38,6 +40,7 @@ public class BackupService {
     private final ProjectRepository projectRepository;
     private final RevenueRepository revenueRepository;
     private final ProgressLogRepository progressRepository;
+    private final ProjectProductRepository projectProductRepository;
     private final DictionaryRepository dictionaryRepository;
     private final ImportMappingRepository importMappingRepository;
     private final ExportTemplateRepository exportTemplateRepository;
@@ -47,6 +50,7 @@ public class BackupService {
     public BackupService(ProjectRepository projectRepository,
                          RevenueRepository revenueRepository,
                          ProgressLogRepository progressRepository,
+                         ProjectProductRepository projectProductRepository,
                          DictionaryRepository dictionaryRepository,
                          ImportMappingRepository importMappingRepository,
                          ExportTemplateRepository exportTemplateRepository,
@@ -55,6 +59,7 @@ public class BackupService {
         this.projectRepository = projectRepository;
         this.revenueRepository = revenueRepository;
         this.progressRepository = progressRepository;
+        this.projectProductRepository = projectProductRepository;
         this.dictionaryRepository = dictionaryRepository;
         this.importMappingRepository = importMappingRepository;
         this.exportTemplateRepository = exportTemplateRepository;
@@ -68,6 +73,8 @@ public class BackupService {
         tables.put("projects", projectRepository.findAll(Sort.by("id")).stream().map(this::projectRow).toList());
         tables.put("revenues", revenueRepository.findAll(Sort.by("id")).stream().map(this::revenueRow).toList());
         tables.put("progress_logs", progressRepository.findAll(Sort.by("id")).stream().map(this::progressRow).toList());
+        tables.put("project_products", projectProductRepository.findAll(Sort.by("id")).stream()
+                .map(this::projectProductRow).toList());
         tables.put("dictionaries", dictionaryRepository.findAll(Sort.by("id")).stream().map(this::dictionaryRow).toList());
         tables.put("import_mappings", importMappingRepository.findAll(Sort.by("id")).stream().map(this::mappingRow).toList());
         tables.put("export_templates", exportTemplateRepository.findAll(Sort.by("id")).stream().map(this::templateRow).toList());
@@ -110,6 +117,13 @@ public class BackupService {
         row.put("projectId", log.getProject().getId());
         row.put("logDate", log.getLogDate());
         row.put("content", log.getContent());
+        return row;
+    }
+
+    private Map<String, Object> projectProductRow(ProjectProduct product) {
+        Map<String, Object> row = base(product);
+        row.put("projectId", product.getProject().getId());
+        row.put("productCode", product.getProductCode());
         return row;
     }
 

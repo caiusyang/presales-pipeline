@@ -62,6 +62,15 @@ export interface ProgressLog {
   updatedAt?: string
 }
 
+// ---------- 项目产品拥有记录 ----------
+export interface ProjectProductRecord {
+  id: ID
+  projectId: ID
+  productCode: string
+  createdAt: string
+  updatedAt?: string
+}
+
 // ---------- 修改日志 ----------
 export type ChangeSource = 'manual' | 'import' | string
 export interface ChangeLog {

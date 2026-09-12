@@ -10,6 +10,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { isValidMonth } from '@/lib/format'
 import { PROJECT_FIELD_DEFS } from '@/lib/fields'
+import { PRODUCT_CATALOG } from '@/lib/products'
 import { useCustomFieldDefs, useImportMappings, useMappingMutations } from '@/hooks/queries'
 import type { ID, ImportMapping } from '@/types'
 import type { ParsedSheet } from './excel'
@@ -18,6 +19,7 @@ import {
   draftsToRules,
   effectiveTarget,
   PROGRESS_TARGET,
+  PRODUCT_SENTINEL,
   REVENUE_SENTINEL,
   NEW_FIELD_PREFIX,
 } from './importTransform'
@@ -62,11 +64,14 @@ export function StepMapping({
   const [saving, setSaving] = useState(false)
 
   const targetOptions = useMemo(() => {
-    const base = PROJECT_FIELD_DEFS.filter((f) => f.editable).map((f) => ({ value: f.key, label: f.label }))
+    const base = PROJECT_FIELD_DEFS
+      .filter((f) => f.editable && f.key !== 'purchasedProducts')
+      .map((f) => ({ value: f.key, label: f.label }))
     const progress = { value: PROGRESS_TARGET, label: '进展（多行文本，按换行拆多条）' }
+    const product = { value: PRODUCT_SENTINEL, label: '已购产品（选择具体产品）' }
     const custom = (customDefs ?? []).map((d) => ({ value: `custom.${d.fieldKey}`, label: `自定义：${d.label}` }))
     const revenue = { value: REVENUE_SENTINEL, label: '按月收入列（指定月份）' }
-    return [...base, progress, ...custom, revenue]
+    return [...base, progress, product, ...custom, revenue]
   }, [customDefs])
 
   // 同一目标被多列选中 → 警告
@@ -80,11 +85,13 @@ export function StepMapping({
   }, [targets])
 
   const monthInvalid = (t: ColumnTarget) => t.target === REVENUE_SENTINEL && !isValidMonth(t.month)
+  const productInvalid = (t: ColumnTarget) => t.target === PRODUCT_SENTINEL && !t.product
   const hasInvalidMonth = targets.some(monthInvalid)
+  const hasInvalidProduct = targets.some(productInvalid)
   const hasAnyMapping = targets.some((t) => effectiveTarget(t) != null)
   const hasDataRows = parsed.totalRows > 0
   const pendingCount = targets.filter((target) => target.target.startsWith(NEW_FIELD_PREFIX)).length
-  const canNext = hasAnyMapping && !hasInvalidMonth && hasDataRows
+  const canNext = hasAnyMapping && !hasInvalidMonth && !hasInvalidProduct && hasDataRows
 
   const setTarget = (i: number, t: ColumnTarget) => onTargetsChange(targets.map((old, j) => (j === i ? t : old)))
 
@@ -167,7 +174,7 @@ export function StepMapping({
         <CardHeader>
           <CardTitle className="text-base">列映射</CardTitle>
           <CardDescription>
-            已自动优先匹配现有字段；未匹配列标记为待新增字段，仅在确认正式导入时创建
+            已自动优先匹配现有字段和固定产品；产品列请选择“已购产品”及具体产品，单元格非空即记为已购
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -186,16 +193,19 @@ export function StepMapping({
                   const eff = effectiveTarget(t)
                   const dup = eff != null && dupKeys.has(eff)
                   const invalid = monthInvalid(t)
+                  const invalidProduct = productInvalid(t)
                   const isPending = t.target.startsWith(NEW_FIELD_PREFIX) && t.pendingField != null
-                  const rowOptions = t.pendingField
-                    ? [
-                        ...targetOptions,
-                        {
-                          value: `${NEW_FIELD_PREFIX}${t.pendingField.fieldType}:${t.pendingField.fieldKey}`,
-                          label: `新增字段：${t.pendingField.label}`,
-                        },
-                      ]
-                    : targetOptions
+                  const legacyProductOption = t.target === 'purchasedProducts'
+                    ? [{ value: 'purchasedProducts', label: '已购产品（旧方案整列名单）' }]
+                    : []
+                  const rowOptions = [
+                    ...targetOptions,
+                    ...legacyProductOption,
+                    ...(t.pendingField ? [{
+                      value: `${NEW_FIELD_PREFIX}${t.pendingField.fieldType}:${t.pendingField.fieldKey}`,
+                      label: `新增字段：${t.pendingField.label}`,
+                    }] : []),
+                  ]
                   return (
                     <TableRow key={i} className={dup ? 'bg-amber-50' : undefined}>
                       <TableCell className="font-medium whitespace-nowrap">{h}</TableCell>
@@ -210,6 +220,7 @@ export function StepMapping({
                             onValueChange={(v) => setTarget(i, {
                               target: v,
                               month: v === REVENUE_SENTINEL ? t.month : '',
+                              product: v === PRODUCT_SENTINEL ? (t.product ?? '') : '',
                               pendingField: t.pendingField,
                             })}
                             options={rowOptions}
@@ -222,6 +233,15 @@ export function StepMapping({
                               className="w-36"
                               value={t.month}
                               onChange={(e) => setTarget(i, { ...t, month: e.target.value })}
+                            />
+                          )}
+                          {t.target === PRODUCT_SENTINEL && (
+                            <Select
+                              className="w-32"
+                              value={t.product ?? ''}
+                              onValueChange={(product) => setTarget(i, { ...t, product: product as ColumnTarget['product'] })}
+                              options={PRODUCT_CATALOG.map((product) => ({ value: product, label: product }))}
+                              placeholder="选择产品"
                             />
                           )}
                         </div>
@@ -246,6 +266,7 @@ export function StepMapping({
                           </div>
                         )}
                         {invalid && <div className="mt-1 text-xs text-destructive">请填写有效月份（YYYY-MM）</div>}
+                        {invalidProduct && <div className="mt-1 text-xs text-destructive">请选择具体产品</div>}
                         {dup && (
                           <div className="mt-1 flex items-center gap-1 text-xs text-amber-600">
                             <AlertTriangle className="h-3 w-3" /> 该目标字段被多列选中，后列会覆盖前列

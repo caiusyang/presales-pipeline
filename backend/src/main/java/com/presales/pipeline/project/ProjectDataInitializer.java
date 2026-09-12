@@ -2,6 +2,7 @@ package com.presales.pipeline.project;
 
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
+import com.presales.pipeline.product.ProjectProductService;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -10,14 +11,19 @@ import org.springframework.transaction.annotation.Transactional;
 public class ProjectDataInitializer implements ApplicationRunner {
 
     private final ProjectRepository repository;
+    private final ProjectProductService projectProductService;
 
-    public ProjectDataInitializer(ProjectRepository repository) {
+    public ProjectDataInitializer(ProjectRepository repository, ProjectProductService projectProductService) {
         this.repository = repository;
+        this.projectProductService = projectProductService;
     }
 
     @Override
     @Transactional
     public void run(ApplicationArguments args) {
-        repository.findAll().forEach(Project::initializeLegacyDefaults);
+        repository.findAll().forEach(project -> {
+            project.initializeLegacyDefaults();
+            projectProductService.sync(project, project.getPurchasedProducts());
+        });
     }
 }

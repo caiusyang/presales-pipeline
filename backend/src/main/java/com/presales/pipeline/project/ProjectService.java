@@ -12,6 +12,8 @@ import com.presales.pipeline.dictionary.DictionaryService;
 import com.presales.pipeline.progress.ProgressLog;
 import com.presales.pipeline.progress.ProgressLogRepository;
 import com.presales.pipeline.progress.dto.ProgressResponse;
+import com.presales.pipeline.product.ProductCatalog;
+import com.presales.pipeline.product.ProjectProductService;
 import com.presales.pipeline.project.dto.ProjectDetailResponse;
 import com.presales.pipeline.project.dto.ProjectRequest;
 import com.presales.pipeline.project.dto.ProjectResponse;
@@ -57,6 +59,7 @@ public class ProjectService {
     private final ChangeLogService changeLogService;
     private final ConfigService configService;
     private final DictionaryService dictionaryService;
+    private final ProjectProductService projectProductService;
 
     public ProjectService(ProjectRepository projectRepository,
                           RevenueRepository revenueRepository,
@@ -64,7 +67,8 @@ public class ProjectService {
                           ChangeLogRepository changeLogRepository,
                           ChangeLogService changeLogService,
                           ConfigService configService,
-                          DictionaryService dictionaryService) {
+                          DictionaryService dictionaryService,
+                          ProjectProductService projectProductService) {
         this.projectRepository = projectRepository;
         this.revenueRepository = revenueRepository;
         this.progressRepository = progressRepository;
@@ -72,6 +76,7 @@ public class ProjectService {
         this.changeLogService = changeLogService;
         this.configService = configService;
         this.dictionaryService = dictionaryService;
+        this.projectProductService = projectProductService;
     }
 
     @Transactional(readOnly = true)
@@ -120,7 +125,8 @@ public class ProjectService {
         List<RevenueResponse> revenueItems = revenues.stream().map(this::toRevenueResponse).toList();
         List<ChangeLogResponse> changes = changeLogRepository.findAllByProjectIdOrderByCreatedAtDescIdDesc(id).stream()
                 .map(this::toChangeLogResponse).toList();
-        return new ProjectDetailResponse(toResponse(project, total), progress, revenueItems, changes);
+        return new ProjectDetailResponse(toResponse(project, total), progress,
+                projectProductService.list(id), revenueItems, changes);
     }
 
     @Transactional
@@ -173,6 +179,7 @@ public class ProjectService {
         Project project = new Project();
         setAll(project, normalized);
         projectRepository.save(project);
+        projectProductService.sync(project, normalized.purchasedProducts());
         changeLogService.log(project, "project", null, "created", source);
         return project;
     }
@@ -191,6 +198,7 @@ public class ProjectService {
                 normalized.purchasedProducts(), source)) {
             project.setPurchasedProducts(normalized.purchasedProducts());
         }
+        projectProductService.sync(project, normalized.purchasedProducts());
         changeAndSet(project, "track", project.getTrack(), normalized.track(), project::setTrack, source);
         changeAndSet(project, "industry", project.getIndustry(), normalized.industry(), project::setIndustry, source);
         changeAndSet(project, "subIndustry", project.getSubIndustry(), normalized.subIndustry(), project::setSubIndustry, source);
@@ -324,17 +332,7 @@ public class ProjectService {
     }
 
     private List<String> normalizeProducts(List<String> values) {
-        if (values == null) {
-            return List.of();
-        }
-        LinkedHashSet<String> normalized = new LinkedHashSet<>();
-        for (String value : values) {
-            String cleaned = cleanNullable(value);
-            if (cleaned != null) {
-                normalized.add(cleaned);
-            }
-        }
-        return List.copyOf(normalized);
+        return ProductCatalog.normalizeAll(values);
     }
 
     private ProgressResponse toProgressResponse(ProgressLog log) {

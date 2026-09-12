@@ -2,6 +2,7 @@ import type { CustomFieldType, MonthStr, ProjectInput, ValueRule } from '@/types
 import type { ImportRecordInput } from '@/api/types'
 import { PROJECT_FIELD_LABELS, REQUIRED_PROJECT_FIELDS } from '@/lib/fields'
 import { isValidMonth, parseProgressText } from '@/lib/format'
+import { normalizeProductCode, PRODUCT_CATALOG, type ProductCode } from '@/lib/products'
 
 // ============================================================
 // 导入组装纯函数：columnMap 抽取 → valueRules（split → exact → default）
@@ -16,6 +17,10 @@ export const CUSTOM_PREFIX = 'custom.'
 export const PROGRESS_TARGET = 'progressText'
 /** 列映射 UI 中「按月收入列（指定月份）」的内部哨兵值（非契约，仅存于界面状态） */
 export const REVENUE_SENTINEL = '__revenue__'
+/** columnMap 目标前缀：独立产品拥有列，值为 `product:<产品编码>`。 */
+export const PRODUCT_PREFIX = 'product:'
+/** 列映射 UI 中「已购产品（指定产品）」的内部哨兵值。 */
+export const PRODUCT_SENTINEL = '__product__'
 /** 尚未落库的自定义字段目标；格式 `__new_custom__:<type>:<fieldKey>`。 */
 export const NEW_FIELD_PREFIX = '__new_custom__:'
 
@@ -54,6 +59,8 @@ export interface ColumnTarget {
   target: string
   /** target 为 REVENUE_SENTINEL 时填写的月份 YYYY-MM */
   month: string
+  /** target 为 PRODUCT_SENTINEL 时选择的固定产品编码。 */
+  product?: ProductCode | ''
   pendingField?: PendingCustomField
 }
 
@@ -62,6 +69,9 @@ export function effectiveTarget(t: ColumnTarget): string | null {
   if (!t.target) return null
   if (t.target === REVENUE_SENTINEL) {
     return isValidMonth(t.month) ? `${REVENUE_PREFIX}${t.month}` : null
+  }
+  if (t.target === PRODUCT_SENTINEL) {
+    return t.product && normalizeProductCode(t.product) ? `${PRODUCT_PREFIX}${t.product}` : null
   }
   return t.target
 }
@@ -84,6 +94,10 @@ export function targetsFromColumnMap(headers: string[], columnMap: Record<string
     if (!v) return { target: '', month: '' }
     if (v.startsWith(REVENUE_PREFIX)) {
       return { target: REVENUE_SENTINEL, month: v.slice(REVENUE_PREFIX.length) }
+    }
+    if (v.startsWith(PRODUCT_PREFIX)) {
+      const product = normalizeProductCode(v.slice(PRODUCT_PREFIX.length))
+      if (product) return { target: PRODUCT_SENTINEL, month: '', product }
     }
     if (v.startsWith(NEW_FIELD_PREFIX)) {
       const [, fieldType, fieldKey] = v.match(/^__new_custom__:(text|number|date):([a-z][a-z0-9_]*)$/) ?? []
@@ -207,6 +221,8 @@ export function buildImportRecords({ headers, rows, columnMap, valueRules, today
     const customFields = fields.customFields as Record<string, unknown>
     const revenues: { month: MonthStr; amount: number }[] = []
     const progress: { logDate: string; content: string }[] = []
+    const purchasedProducts = new Set<ProductCode>()
+    let hasProductColumn = false
 
     /** 写字段（custom. 入 customFields）；overwrite=false 时仅填空值（default 规则语义） */
     const setField = (key: string, value: string, overwrite: boolean) => {
@@ -231,6 +247,13 @@ export function buildImportRecords({ headers, rows, columnMap, valueRules, today
     // 1) 按 columnMap 抽取
     for (const { idx, target } of mappedCols) {
       const raw = (row[idx] ?? '').trim()
+      if (target.startsWith(PRODUCT_PREFIX)) {
+        hasProductColumn = true
+        const product = normalizeProductCode(target.slice(PRODUCT_PREFIX.length))
+        // 产品独立列采用用户确认的规则：单元格非空即表示已购。
+        if (raw && product) purchasedProducts.add(product)
+        continue
+      }
       if (target === PROGRESS_TARGET) {
         if (raw) progress.push(...parseProgressText(raw, today))
         continue
@@ -248,6 +271,22 @@ export function buildImportRecords({ headers, rows, columnMap, valueRules, today
       }
       if (!raw) continue
       setField(target, raw, true)
+    }
+
+    if (hasProductColumn) {
+      const generic = fields.purchasedProducts
+      if (Array.isArray(generic)) {
+        for (const value of generic) {
+          const product = normalizeProductCode(String(value))
+          if (product) purchasedProducts.add(product)
+        }
+      } else if (generic != null) {
+        for (const value of String(generic).split(/[、,，]/)) {
+          const product = normalizeProductCode(value)
+          if (product) purchasedProducts.add(product)
+        }
+      }
+      fields.purchasedProducts = PRODUCT_CATALOG.filter((product) => purchasedProducts.has(product))
     }
 
     // 2) valueRules：split → exact → default

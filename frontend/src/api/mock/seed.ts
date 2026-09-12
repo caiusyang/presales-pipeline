@@ -8,6 +8,7 @@ import type {
   Project,
   Revenue,
 } from '@/types'
+import { PRODUCT_CATALOG } from '@/lib/products'
 
 // ============================================================
 // Mock 种子数据：字典 / 自定义字段 / 模板 / 项目及其收入、进展
@@ -116,8 +117,15 @@ export function seedDB(): MockDB {
     dictionaries.push({ id: solutionId, type: 'solution', value: s, parentId: null, sortOrder: (i + 1) * 10 })
     const subId = seq++
     dictionaries.push({ id: subId, type: 'sub_solution', value: `${s}标准方案`, parentId: solutionId, sortOrder: 10 })
-    dictionaries.push({ id: seq++, type: 'product', value: `${s}基础版`, parentId: subId, sortOrder: 10 })
-    dictionaries.push({ id: seq++, type: 'product', value: `${s}高级版`, parentId: subId, sortOrder: 20 })
+    PRODUCT_CATALOG.forEach((product, productIndex) => {
+      dictionaries.push({
+        id: seq++,
+        type: 'product',
+        value: product,
+        parentId: subId,
+        sortOrder: (productIndex + 1) * 10,
+      })
+    })
   })
 
   const customFieldDefs: CustomFieldDef[] = [

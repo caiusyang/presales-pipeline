@@ -1,10 +1,12 @@
 import { PROJECT_FIELD_DEFS } from '@/lib/fields'
 import type { CustomFieldDef, CustomFieldType } from '@/types'
+import { normalizeProductCode, type ProductCode } from '@/lib/products'
 import {
   NEW_FIELD_PREFIX,
   normalizeDateValue,
   normalizeNumberValue,
   PROGRESS_TARGET,
+  PRODUCT_SENTINEL,
   REVENUE_SENTINEL,
   type ColumnTarget,
   type PendingCustomField,
@@ -27,6 +29,26 @@ const FIELD_ALIASES: Record<string, string[]> = {
   scenario: ['应用场景', '场景'],
   keyNeeds: ['关键需求', '需求'],
   keyRisks: ['关键风险', '风险'],
+}
+
+const PRODUCT_ALIASES: Record<ProductCode, string[]> = {
+  AAD: ['AAD', 'DDoS', 'Anti-DDoS'],
+  WAF: ['WAF'],
+  CFW: ['CFW'],
+  ESA: ['ESA', '边缘安全ESA', '边缘安全'],
+  HSS: ['HSS'],
+  NDR: ['NDR'],
+  DEW: ['DEW'],
+  DSC: ['DSC', '数据分类分级'],
+  SecMaster: ['SecMaster', '安全云脑'],
+}
+
+function productFromHeader(header: string): ProductCode | null {
+  const candidates = new Set(headerCandidates(header))
+  for (const [product, aliases] of Object.entries(PRODUCT_ALIASES) as [ProductCode, string[]][]) {
+    if (aliases.some((alias) => candidates.has(normalizedName(alias)))) return product
+  }
+  return normalizeProductCode(header.split(/\s*[/／>]\s*/).at(-1) ?? header)
 }
 
 function normalizedName(value: string): string {
@@ -97,6 +119,14 @@ export function autoMapColumns(headers: string[], rows: string[][], customDefs: 
   const usedTargets = new Set<string>()
   const usedFieldKeys = new Set(customDefs.map((def) => def.fieldKey))
   return headers.map((header, columnIndex) => {
+    const product = productFromHeader(header)
+    if (product) {
+      const target = `product:${product}`
+      if (!usedTargets.has(target)) {
+        usedTargets.add(target)
+        return { target: PRODUCT_SENTINEL, month: '', product }
+      }
+    }
     const existing = headerCandidates(header)
       .map((candidate) => known.get(candidate))
       .find((target) => target != null && !usedTargets.has(target))

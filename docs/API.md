@@ -41,7 +41,7 @@
   "safetySpace": "数据域",
   "solution": "安全咨询",
   "subSolution": "数据安全规划",
-  "purchasedProducts": ["数据分类分级平台", "数据脱敏系统"],
+  "purchasedProducts": ["DSC", "DEW"],
   "track": "数据安全",
   "industry": "金融",
   "subIndustry": "银行",
@@ -54,11 +54,11 @@
 }
 ```
 
-`projectStatus` 仅支持 `机会点识别`、`方案引导`、`方案设计`、`中标`，省略时默认为`机会点识别`。状态为`中标`时，`solution`、`subSolution` 和至少一个 `purchasedProducts` 必填；状态回退时这些信息会保留。
+`projectStatus` 仅支持 `机会点识别`、`方案引导`、`方案设计`、`中标`，省略时默认为`机会点识别`。状态为`中标`时，`solution`、`subSolution` 和至少一个 `purchasedProducts` 必填；状态回退时这些信息会保留。产品编码固定为 `AAD`、`WAF`、`CFW`、`ESA`、`HSS`、`NDR`、`DEW`、`DSC`、`SecMaster`。
 
 ### `GET /api/projects/{id}/detail`
 
-一次返回 `project`、`progress`、`revenues`、`changeLogs`。
+一次返回 `project`、`progress`、`products`、`revenues`、`changeLogs`。`products` 为 `project_products` 关系表中的已购记录，包含 `id`、`projectId`、`productCode`、`createdAt`、`updatedAt`。
 
 ### `DELETE /api/projects/{id}`
 
@@ -135,7 +135,7 @@
 }
 ```
 
-方案目录的类型依次为 `solution`、`sub_solution`、`product`，后两级创建时必须传对应上级的 `parentId`。
+方案目录的类型依次为 `solution`、`sub_solution`、`product`，后两级创建时必须传对应上级的 `parentId`。`product` 的值只能从固定产品目录选择，产品编码不可重命名；产品与不同细分解决方案的关联仍可自行配置。
 
 `type` 使用小写字母、数字和下划线。内置业务类型包括 `track`、`solution`、`industry`、`sub_industry`，也可配置 `safety_space`。
 
@@ -232,6 +232,8 @@
 
 前端导入向导会先按字段名称和常用别名匹配基础字段及已有自定义字段。未匹配列会根据非空样本推断为 `text`、`number` 或 `date`，在 dry-run 预检阶段不创建字段，只有用户确认正式导入后才通过自定义字段接口创建并写入。
 
+产品独立列使用 `product:<产品编码>` 作为映射值，例如 `"WAF列": "product:WAF"`。映射界面显示“已购产品”和具体产品两个选择层级；数据转换时单元格非空即把该产品加入 `purchasedProducts`，空值表示未购。
+
 ## 导出
 
 ### `GET /api/export/fields?scope=projects`
@@ -270,5 +272,5 @@
 
 ## 备份与健康
 
-- `GET /api/backup`：下载全量 JSON，包含软删除数据和修改日志。
+- `GET /api/backup`：下载全量 JSON，包含 `project_products`、软删除数据和修改日志。
 - `GET /actuator/health`：容器健康检查，不使用统一业务响应结构。

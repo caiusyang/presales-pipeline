@@ -36,8 +36,8 @@ class ProjectWinningIntegrationTest {
     void winningRequiresConfiguredHierarchyAndRollbackKeepsSelections() throws Exception {
         long solutionId = createDictionary("solution", "测试云安全方案", null);
         long subSolutionId = createDictionary("sub_solution", "测试边界安全", solutionId);
-        long wafId = createDictionary("product", "测试WAF", subSolutionId);
-        createDictionary("product", "测试DDoS", subSolutionId);
+        long wafId = createDictionary("product", "WAF", subSolutionId);
+        createDictionary("product", "AAD", subSolutionId);
 
         long projectId = dataId(mockMvc.perform(post("/api/projects").with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
@@ -56,7 +56,7 @@ class ProjectWinningIntegrationTest {
         mockMvc.perform(put("/api/projects/{id}", projectId).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(projectJson("中标", "测试云安全方案", "测试边界安全",
-                                "[\"测试WAF\",\"测试DDoS\"]")))
+                                "[\"WAF\",\"AAD\"]")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.projectStatus").value("中标"))
                 .andExpect(jsonPath("$.data.subSolution").value("测试边界安全"))
@@ -65,10 +65,23 @@ class ProjectWinningIntegrationTest {
         mockMvc.perform(put("/api/projects/{id}", projectId).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(projectJson("方案设计", "测试云安全方案", "测试边界安全",
-                                "[\"测试WAF\",\"测试DDoS\"]")))
+                                "[\"WAF\",\"AAD\"]")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.projectStatus").value("方案设计"))
                 .andExpect(jsonPath("$.data.purchasedProducts.length()").value(2));
+
+        mockMvc.perform(get("/api/projects/{id}/detail", projectId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.products.length()").value(2))
+                .andExpect(jsonPath("$.data.products[0].productCode").value("AAD"))
+                .andExpect(jsonPath("$.data.products[1].productCode").value("WAF"));
+
+        mockMvc.perform(post("/api/dictionaries").with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new DictionaryPayload("product", "其他产品", subSolutionId, 30))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("已购产品只能是")));
 
         mockMvc.perform(get("/api/projects").param("projectStatus", "方案设计"))
                 .andExpect(status().isOk())

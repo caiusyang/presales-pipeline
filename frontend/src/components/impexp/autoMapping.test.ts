@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import type { CustomFieldDef } from '@/types'
 import { autoMapColumns, inferColumnType, pendingFieldsFromTargets } from './autoMapping'
-import { buildColumnMap, buildImportRecords, NEW_FIELD_PREFIX, targetsFromColumnMap } from './importTransform'
+import {
+  buildColumnMap,
+  buildImportRecords,
+  NEW_FIELD_PREFIX,
+  PRODUCT_SENTINEL,
+  targetsFromColumnMap,
+} from './importTransform'
 
 const existingField: CustomFieldDef = {
   id: 1,
@@ -43,6 +49,37 @@ describe('Excel 自动字段映射', () => {
       [],
     )
     expect(targets.map((target) => target.target)).toEqual(['customerName', 'projectName'])
+  })
+
+  it('固定产品列自动映射为已购产品二级选项，非空值表示已购', () => {
+    const headers = [
+      '基础 / 客户名称',
+      '基础 / 项目名称',
+      '边界安全 / DDoS',
+      '边界安全 / WAF',
+      '边界安全 / 边缘安全ESA',
+      '安全运营 / SecMaster',
+    ]
+    const rows = [
+      ['甲客户', '甲项目', '已有', '', '√', '是'],
+      ['乙客户', '乙项目', '', '1', '', ''],
+    ]
+    const targets = autoMapColumns(headers, rows, [])
+
+    expect(targets.slice(2).map((target) => [target.target, target.product])).toEqual([
+      [PRODUCT_SENTINEL, 'AAD'],
+      [PRODUCT_SENTINEL, 'WAF'],
+      [PRODUCT_SENTINEL, 'ESA'],
+      [PRODUCT_SENTINEL, 'SecMaster'],
+    ])
+
+    const columnMap = buildColumnMap(headers, targets)
+    const restored = targetsFromColumnMap(headers, columnMap)
+    expect(restored[2]).toMatchObject({ target: PRODUCT_SENTINEL, product: 'AAD' })
+
+    const output = buildImportRecords({ headers, rows, columnMap, valueRules: [], today: '2026-09-12' })
+    expect(output.records[0].fields.purchasedProducts).toEqual(['AAD', 'ESA', 'SecMaster'])
+    expect(output.records[1].fields.purchasedProducts).toEqual(['WAF'])
   })
 
   it('全列内容必须一致符合类型才推断为数字或日期', () => {

@@ -11,6 +11,7 @@ import type {
   MonthStr,
   Paged,
   ProgressLog,
+  ProjectProductRecord,
   Project,
   ProjectInput,
   Revenue,
@@ -44,6 +45,8 @@ export interface ProjectDetail {
   project: Project
   /** 倒序 */
   progress: ProgressLog[]
+  /** 固定产品目录中已购产品对应的关系表记录 */
+  products: ProjectProductRecord[]
   /** 升序 by month */
   revenues: Revenue[]
   /** 倒序 */
