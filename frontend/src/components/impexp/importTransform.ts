@@ -1,4 +1,4 @@
-import type { MonthStr, ProjectInput, ValueRule } from '@/types'
+import type { CustomFieldType, MonthStr, ProjectInput, ValueRule } from '@/types'
 import type { ImportRecordInput } from '@/api/types'
 import { PROJECT_FIELD_LABELS, REQUIRED_PROJECT_FIELDS } from '@/lib/fields'
 import { isValidMonth, parseProgressText } from '@/lib/format'
@@ -16,6 +16,36 @@ export const CUSTOM_PREFIX = 'custom.'
 export const PROGRESS_TARGET = 'progressText'
 /** 列映射 UI 中「按月收入列（指定月份）」的内部哨兵值（非契约，仅存于界面状态） */
 export const REVENUE_SENTINEL = '__revenue__'
+/** 尚未落库的自定义字段目标；格式 `__new_custom__:<type>:<fieldKey>`。 */
+export const NEW_FIELD_PREFIX = '__new_custom__:'
+
+export function normalizeDateValue(value: string): string | null {
+  const text = value.trim()
+  let match = text.match(/^(\d{4})[-/.年](\d{1,2})[-/.月](\d{1,2})日?$/)
+  if (!match) {
+    const us = text.match(/^(\d{1,2})[/.](\d{1,2})[/.](\d{4})$/)
+    if (us) match = [us[0], us[3], us[1], us[2]]
+  }
+  if (!match) return null
+  const year = Number(match[1])
+  const month = Number(match[2])
+  const day = Number(match[3])
+  const date = new Date(Date.UTC(year, month - 1, day))
+  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) return null
+  return `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+}
+
+export function normalizeNumberValue(value: string): string | null {
+  const text = value.trim()
+  if (!/^[+-]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?$/.test(text)) return null
+  return text.replaceAll(',', '')
+}
+
+export interface PendingCustomField {
+  fieldKey: string
+  label: string
+  fieldType: Extract<CustomFieldType, 'text' | 'number' | 'date'>
+}
 
 // ---------- 列映射界面状态 ----------
 
@@ -24,6 +54,7 @@ export interface ColumnTarget {
   target: string
   /** target 为 REVENUE_SENTINEL 时填写的月份 YYYY-MM */
   month: string
+  pendingField?: PendingCustomField
 }
 
 /** 求某列的有效 columnMap 值；收入月份非法或未选择时返回 null */
@@ -53,6 +84,16 @@ export function targetsFromColumnMap(headers: string[], columnMap: Record<string
     if (!v) return { target: '', month: '' }
     if (v.startsWith(REVENUE_PREFIX)) {
       return { target: REVENUE_SENTINEL, month: v.slice(REVENUE_PREFIX.length) }
+    }
+    if (v.startsWith(NEW_FIELD_PREFIX)) {
+      const [, fieldType, fieldKey] = v.match(/^__new_custom__:(text|number|date):([a-z][a-z0-9_]*)$/) ?? []
+      if (fieldType && fieldKey) {
+        return {
+          target: v,
+          month: '',
+          pendingField: { fieldKey, label: h.slice(0, 255), fieldType: fieldType as PendingCustomField['fieldType'] },
+        }
+      }
     }
     return { target: v, month: '' }
   })
@@ -169,6 +210,16 @@ export function buildImportRecords({ headers, rows, columnMap, valueRules, today
 
     /** 写字段（custom. 入 customFields）；overwrite=false 时仅填空值（default 规则语义） */
     const setField = (key: string, value: string, overwrite: boolean) => {
+      if (key.startsWith(NEW_FIELD_PREFIX)) {
+        const [, fieldType, fieldKey] = key.match(/^__new_custom__:(text|number|date):([a-z][a-z0-9_]*)$/) ?? []
+        if (!fieldType || !fieldKey) return
+        let normalized = value
+        if (fieldType === 'number') normalized = normalizeNumberValue(value) ?? value
+        if (fieldType === 'date') normalized = normalizeDateValue(value) ?? value
+        if (!overwrite && customFields[fieldKey] != null && String(customFields[fieldKey]).trim() !== '') return
+        customFields[fieldKey] = normalized
+        return
+      }
       if (!overwrite) {
         const cur = key.startsWith(CUSTOM_PREFIX) ? customFields[key.slice(CUSTOM_PREFIX.length)] : fields[key]
         if (cur != null && String(cur).trim() !== '') return

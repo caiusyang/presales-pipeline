@@ -10,6 +10,7 @@ import type {
   MonthStr,
   ProjectInput,
   ValueRule,
+  CustomFieldType,
 } from '@/types'
 import type {
   CustomFieldInput,
@@ -256,6 +257,32 @@ export function useImportRecords() {
       api.importRecords(input),
     onSuccess: (result) => {
       if (!result.dryRun) qc.invalidateQueries() // 正式导入影响面广，全量失效
+    },
+    onError: onErr,
+  })
+}
+
+export function useCreateImportFields() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (fields: { fieldKey: string; label: string; fieldType: Extract<CustomFieldType, 'text' | 'number' | 'date'> }[]) => {
+      const existing = await api.listCustomFields()
+      const existingKeys = new Set(existing.map((field) => field.fieldKey))
+      let sortOrder = Math.max(0, ...existing.map((field) => field.sortOrder))
+      let created = 0
+      for (const field of fields) {
+        if (existingKeys.has(field.fieldKey)) continue
+        sortOrder += 10
+        await api.createCustomField({ ...field, required: false, options: [], sortOrder })
+        existingKeys.add(field.fieldKey)
+        created += 1
+      }
+      return created
+    },
+    onSuccess: (created) => {
+      qc.invalidateQueries({ queryKey: qk.customFields() })
+      qc.invalidateQueries({ queryKey: ['export-fields'] })
+      if (created > 0) toast.success(`已新增 ${created} 个导入字段`)
     },
     onError: onErr,
   })

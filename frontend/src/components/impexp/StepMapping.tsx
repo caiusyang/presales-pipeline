@@ -19,8 +19,9 @@ import {
   effectiveTarget,
   PROGRESS_TARGET,
   REVENUE_SENTINEL,
+  NEW_FIELD_PREFIX,
 } from './importTransform'
-import type { ColumnTarget, RuleDraft } from './importTransform'
+import type { ColumnTarget, PendingCustomField, RuleDraft } from './importTransform'
 import { ValueRulesEditor } from './ValueRulesEditor'
 import { SaveNameDialog } from './SaveNameDialog'
 
@@ -82,9 +83,15 @@ export function StepMapping({
   const hasInvalidMonth = targets.some(monthInvalid)
   const hasAnyMapping = targets.some((t) => effectiveTarget(t) != null)
   const hasDataRows = parsed.totalRows > 0
+  const pendingCount = targets.filter((target) => target.target.startsWith(NEW_FIELD_PREFIX)).length
   const canNext = hasAnyMapping && !hasInvalidMonth && hasDataRows
 
   const setTarget = (i: number, t: ColumnTarget) => onTargetsChange(targets.map((old, j) => (j === i ? t : old)))
+
+  const setPendingType = (i: number, field: PendingCustomField, fieldType: PendingCustomField['fieldType']) => {
+    const next = { ...field, fieldType }
+    setTarget(i, { target: `${NEW_FIELD_PREFIX}${fieldType}:${field.fieldKey}`, month: '', pendingField: next })
+  }
 
   const handleSelectMapping = (v: string) => {
     if (!v) {
@@ -159,7 +166,9 @@ export function StepMapping({
       <Card>
         <CardHeader>
           <CardTitle className="text-base">列映射</CardTitle>
-          <CardDescription>为每个 Excel 列选择目标字段，未映射的列将被忽略</CardDescription>
+          <CardDescription>
+            已自动优先匹配现有字段；未匹配列标记为待新增字段，仅在确认正式导入时创建
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="overflow-auto rounded-md border">
@@ -177,6 +186,16 @@ export function StepMapping({
                   const eff = effectiveTarget(t)
                   const dup = eff != null && dupKeys.has(eff)
                   const invalid = monthInvalid(t)
+                  const isPending = t.target.startsWith(NEW_FIELD_PREFIX) && t.pendingField != null
+                  const rowOptions = t.pendingField
+                    ? [
+                        ...targetOptions,
+                        {
+                          value: `${NEW_FIELD_PREFIX}${t.pendingField.fieldType}:${t.pendingField.fieldKey}`,
+                          label: `新增字段：${t.pendingField.label}`,
+                        },
+                      ]
+                    : targetOptions
                   return (
                     <TableRow key={i} className={dup ? 'bg-amber-50' : undefined}>
                       <TableCell className="font-medium whitespace-nowrap">{h}</TableCell>
@@ -188,8 +207,12 @@ export function StepMapping({
                           <Select
                             className="flex-1"
                             value={t.target}
-                            onValueChange={(v) => setTarget(i, { target: v, month: v === REVENUE_SENTINEL ? t.month : '' })}
-                            options={targetOptions}
+                            onValueChange={(v) => setTarget(i, {
+                              target: v,
+                              month: v === REVENUE_SENTINEL ? t.month : '',
+                              pendingField: t.pendingField,
+                            })}
+                            options={rowOptions}
                             clearable
                             clearLabel="忽略该列"
                           />
@@ -202,6 +225,26 @@ export function StepMapping({
                             />
                           )}
                         </div>
+                        {isPending && t.pendingField && (
+                          <div className="mt-2 flex flex-wrap items-center gap-2">
+                            <Badge variant="info">待新增</Badge>
+                            <span className="text-xs text-muted-foreground">识别类型</span>
+                            <Select
+                              className="w-28"
+                              value={t.pendingField.fieldType}
+                              onValueChange={(value) => setPendingType(
+                                i,
+                                t.pendingField!,
+                                value as PendingCustomField['fieldType'],
+                              )}
+                              options={[
+                                { value: 'text', label: '文本' },
+                                { value: 'number', label: '数字' },
+                                { value: 'date', label: '日期' },
+                              ]}
+                            />
+                          </div>
+                        )}
                         {invalid && <div className="mt-1 text-xs text-destructive">请填写有效月份（YYYY-MM）</div>}
                         {dup && (
                           <div className="mt-1 flex items-center gap-1 text-xs text-amber-600">
@@ -228,9 +271,12 @@ export function StepMapping({
         <Button variant="outline" onClick={onBack}>
           <ArrowLeft /> 上一步
         </Button>
-        <Button onClick={onNext} disabled={!canNext}>
-          下一步：确认执行 <ArrowRight />
-        </Button>
+        <div className="flex items-center gap-3">
+          {pendingCount > 0 && <span className="text-xs text-muted-foreground">正式导入时将新增 {pendingCount} 个字段</span>}
+          <Button onClick={onNext} disabled={!canNext}>
+            下一步：确认执行 <ArrowRight />
+          </Button>
+        </div>
       </div>
 
       <SaveNameDialog

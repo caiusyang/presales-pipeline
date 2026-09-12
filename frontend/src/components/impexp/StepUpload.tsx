@@ -12,7 +12,7 @@ const PREVIEW_ROWS = 20
 
 interface Props {
   parsed: ParsedSheet | null
-  onParsed: (p: ParsedSheet) => void
+  onParsed: (p: ParsedSheet) => void | Promise<void>
   onNext: () => void
 }
 
@@ -25,7 +25,7 @@ export function StepUpload({ parsed, onParsed, onNext }: Props) {
     setParsing(true)
     try {
       const p = await parseExcelFile(file)
-      onParsed(p)
+      await onParsed(p)
       toast.success(`解析成功：${p.sheetName}，识别 ${p.headerRows} 行表头、${p.totalRows} 行数据`)
     } catch (e) {
       toast.error(`解析失败：${(e as Error).message || '无法读取该文件'}`)

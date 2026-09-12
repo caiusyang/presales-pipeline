@@ -12,7 +12,9 @@ import {
   rulesToDrafts,
   targetsFromColumnMap,
 } from '@/components/impexp/importTransform'
+import { autoMapColumns, pendingFieldsFromTargets } from '@/components/impexp/autoMapping'
 import type { ColumnTarget, RuleDraft } from '@/components/impexp/importTransform'
+import { useCustomFieldDefs } from '@/hooks/queries'
 
 const STEPS = ['上传解析', '映射调整', '确认执行']
 
@@ -25,16 +27,24 @@ export default function ImportPage() {
   const [mappingName, setMappingName] = useState('')
   // step 变化时重置 StepConfirm 内部状态（重新预检）
   const [confirmKey, setConfirmKey] = useState(0)
+  const customDefsQ = useCustomFieldDefs()
 
   const columnMap = useMemo(
     () => (parsed ? buildColumnMap(parsed.headers, targets) : {}),
     [parsed, targets],
   )
   const valueRules = useMemo(() => draftsToRules(ruleDrafts), [ruleDrafts])
+  const pendingFields = useMemo(() => pendingFieldsFromTargets(targets), [targets])
 
-  const handleParsed = (p: ParsedSheet) => {
+  const handleParsed = async (p: ParsedSheet) => {
+    let customDefs = customDefsQ.data
+    if (!customDefs) {
+      const refreshed = await customDefsQ.refetch()
+      if (refreshed.error) throw refreshed.error
+      customDefs = refreshed.data ?? []
+    }
     setParsed(p)
-    setTargets(p.headers.map(() => ({ target: '', month: '' })))
+    setTargets(autoMapColumns(p.headers, p.rows, customDefs))
     setRuleDrafts([])
     setMappingId(null)
     setMappingName('')
@@ -115,6 +125,7 @@ export default function ImportPage() {
           onClearMapping={() => {
             setMappingId(null)
             setMappingName('')
+            setTargets(autoMapColumns(parsed.headers, parsed.rows, customDefsQ.data ?? []))
           }}
           onBack={() => setStep(1)}
           onNext={() => goStep(3)}
@@ -128,6 +139,7 @@ export default function ImportPage() {
           columnMap={columnMap}
           valueRules={valueRules}
           mappingId={mappingId}
+          pendingFields={pendingFields}
           onBack={() => setStep(2)}
           onReset={resetAll}
         />

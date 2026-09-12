@@ -230,6 +230,8 @@
 
 `fields` 同时接受 camelCase 与 snake_case。覆盖项目时，未出现的字段保持原值；出现的空字段会清空。响应状态为 `added`、`overwritten` 或 `skipped`。
 
+前端导入向导会先按字段名称和常用别名匹配基础字段及已有自定义字段。未匹配列会根据非空样本推断为 `text`、`number` 或 `date`，在 dry-run 预检阶段不创建字段，只有用户确认正式导入后才通过自定义字段接口创建并写入。
+
 ## 导出
 
 ### `GET /api/export/fields?scope=projects`

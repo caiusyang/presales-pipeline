@@ -1,0 +1,80 @@
+import { describe, expect, it } from 'vitest'
+import type { CustomFieldDef } from '@/types'
+import { autoMapColumns, inferColumnType, pendingFieldsFromTargets } from './autoMapping'
+import { buildColumnMap, buildImportRecords, NEW_FIELD_PREFIX, targetsFromColumnMap } from './importTransform'
+
+const existingField: CustomFieldDef = {
+  id: 1,
+  fieldKey: 'existing_note',
+  label: '已有备注',
+  fieldType: 'text',
+  required: false,
+  options: [],
+  sortOrder: 10,
+}
+
+describe('Excel 自动字段映射', () => {
+  it('优先匹配基础字段和已有自定义字段，剩余列推断后标记待新增', () => {
+    const headers = ['客户名称', '项目名称', '已有备注', '成交金额', '拜访日期', '补充说明']
+    const rows = [
+      ['甲客户', '甲项目', '重点', '1,234.50', '2026/9/12', '第一次沟通'],
+      ['乙客户', '乙项目', '跟进', '88', '2026-09-13', ''],
+    ]
+    const targets = autoMapColumns(headers, rows, [existingField])
+
+    expect(targets.slice(0, 3).map((target) => target.target)).toEqual([
+      'customerName',
+      'projectName',
+      'custom.existing_note',
+    ])
+    expect(targets.slice(3).map((target) => target.pendingField?.fieldType)).toEqual([
+      'number',
+      'date',
+      'text',
+    ])
+    expect(pendingFieldsFromTargets(targets)).toHaveLength(3)
+    expect(targets[3].pendingField?.fieldKey).toMatch(/^excel_[a-z0-9_]+$/)
+  })
+
+  it('多层表头使用末级名称匹配现有字段', () => {
+    const targets = autoMapColumns(
+      ['项目基础信息 / 客户名称', '项目基础信息 / 项目名称'],
+      [['甲客户', '甲项目']],
+      [],
+    )
+    expect(targets.map((target) => target.target)).toEqual(['customerName', 'projectName'])
+  })
+
+  it('全列内容必须一致符合类型才推断为数字或日期', () => {
+    expect(inferColumnType(['1', '2,000.50', '-3'])).toBe('number')
+    expect(inferColumnType(['2026-09-12', '2026/9/13'])).toBe('date')
+    expect(inferColumnType(['1', '待确认'])).toBe('text')
+    expect(inferColumnType(['', ''])).toBe('text')
+  })
+
+  it('待新增字段可保存映射并在组装记录时规整数值和日期', () => {
+    const targets = autoMapColumns(
+      ['客户名称', '项目名称', '金额', '日期'],
+      [['甲客户', '甲项目', '1,234.50', '2026/9/12']],
+      [],
+    )
+    const columnMap = buildColumnMap(['客户名称', '项目名称', '金额', '日期'], targets)
+    expect(columnMap.金额).toMatch(new RegExp(`^${NEW_FIELD_PREFIX}number:`))
+
+    const restored = targetsFromColumnMap(['客户名称', '项目名称', '金额', '日期'], columnMap)
+    expect(restored[2].pendingField?.fieldType).toBe('number')
+    expect(restored[3].pendingField?.fieldType).toBe('date')
+
+    const output = buildImportRecords({
+      headers: ['客户名称', '项目名称', '金额', '日期'],
+      rows: [['甲客户', '甲项目', '1,234.50', '2026/9/12']],
+      columnMap,
+      valueRules: [],
+      today: '2026-09-12',
+    })
+    const customFields = output.records[0].fields.customFields ?? {}
+    const pending = pendingFieldsFromTargets(targets)
+    expect(customFields[pending[0].fieldKey]).toBe('1234.50')
+    expect(customFields[pending[1].fieldKey]).toBe('2026-09-12')
+  })
+})

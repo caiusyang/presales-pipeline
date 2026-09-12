@@ -6,8 +6,9 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
-import { useImportRecords } from '@/hooks/queries'
+import { useCreateImportFields, useImportRecords } from '@/hooks/queries'
 import type { ID, ValueRule } from '@/types'
+import type { PendingCustomField } from './importTransform'
 import type { ImportResult } from '@/api/types'
 import type { ParsedSheet } from './excel'
 import { buildImportRecords } from './importTransform'
@@ -18,13 +19,15 @@ interface Props {
   columnMap: Record<string, string>
   valueRules: ValueRule[]
   mappingId: ID | null
+  pendingFields: PendingCustomField[]
   onBack: () => void
   onReset: () => void
 }
 
 /** 导入第 3 步：组装记录 → dryRun 预检 → 确认执行 → 展示结果 */
-export function StepConfirm({ parsed, columnMap, valueRules, mappingId, onBack, onReset }: Props) {
+export function StepConfirm({ parsed, columnMap, valueRules, mappingId, pendingFields, onBack, onReset }: Props) {
   const importMut = useImportRecords()
+  const createFields = useCreateImportFields()
   const today = useMemo(() => dayjs().format('YYYY-MM-DD'), [])
   const { records, problems } = useMemo(
     () =>
@@ -44,10 +47,23 @@ export function StepConfirm({ parsed, columnMap, valueRules, mappingId, onBack, 
   const [confirmOpen, setConfirmOpen] = useState(false)
   const ranRef = useRef(false)
 
+  const previewRecords = useMemo(() => {
+    const pendingKeys = new Set(pendingFields.map((field) => field.fieldKey))
+    return records.map((record) => ({
+      ...record,
+      fields: {
+        ...record.fields,
+        customFields: Object.fromEntries(
+          Object.entries(record.fields.customFields ?? {}).filter(([key]) => !pendingKeys.has(key)),
+        ),
+      },
+    }))
+  }, [records, pendingFields])
+
   const runDry = async () => {
     setPreview(null)
     try {
-      const r = await importMut.mutateAsync({ mappingId, dryRun: true, records })
+      const r = await importMut.mutateAsync({ mappingId, dryRun: true, records: previewRecords })
       setPreview(r)
     } catch {
       // 错误提示由 hook 统一 toast
@@ -64,6 +80,7 @@ export function StepConfirm({ parsed, columnMap, valueRules, mappingId, onBack, 
 
   const runImport = async () => {
     try {
+      if (pendingFields.length > 0) await createFields.mutateAsync(pendingFields)
       const r = await importMut.mutateAsync({ mappingId, dryRun: false, records })
       setFinalResult(r)
       setConfirmOpen(false)
@@ -95,6 +112,9 @@ export function StepConfirm({ parsed, columnMap, valueRules, mappingId, onBack, 
           </span>
           <span className="text-muted-foreground">映射列 {Object.keys(columnMap).length} 个</span>
           <span className="text-muted-foreground">值映射规则 {valueRules.length} 条</span>
+          {pendingFields.length > 0 && (
+            <span className="text-amber-700">确认后新增字段 {pendingFields.length} 个</span>
+          )}
           {mappingId != null && <span className="text-muted-foreground">将关联当前映射方案</span>}
         </CardContent>
       </Card>
@@ -113,6 +133,15 @@ export function StepConfirm({ parsed, columnMap, valueRules, mappingId, onBack, 
               ))}
               {problems.length > 100 && <div>… 其余 {problems.length - 100} 条省略</div>}
             </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {pendingFields.length > 0 && (
+        <Card className="border-blue-200 bg-blue-50/60">
+          <CardContent className="pt-4 text-sm text-blue-800 sm:pt-5">
+            当前预检不会创建或校验待新增字段。点击正式导入并再次确认后，系统会先创建
+            {pendingFields.length} 个自定义字段，再写入对应数据。
           </CardContent>
         </Card>
       )}
@@ -137,7 +166,7 @@ export function StepConfirm({ parsed, columnMap, valueRules, mappingId, onBack, 
           <Button variant="outline" onClick={() => void runDry()} disabled={importMut.isPending}>
             <RefreshCw /> 重新预检
           </Button>
-          <Button onClick={() => setConfirmOpen(true)} disabled={!preview || importMut.isPending || records.length === 0}>
+          <Button onClick={() => setConfirmOpen(true)} disabled={!preview || importMut.isPending || createFields.isPending || records.length === 0}>
             <UploadCloud /> 执行导入
           </Button>
         </div>
@@ -149,11 +178,11 @@ export function StepConfirm({ parsed, columnMap, valueRules, mappingId, onBack, 
         title="确认执行导入"
         description={
           preview
-            ? `预检结果：新增 ${preview.added} 条、覆盖 ${preview.overwritten} 条、跳过 ${preview.skipped} 条。执行后将正式写入平台，确认继续？`
+            ? `预检结果：新增 ${preview.added} 条、覆盖 ${preview.overwritten} 条、跳过 ${preview.skipped} 条。${pendingFields.length > 0 ? `同时将新增 ${pendingFields.length} 个自定义字段。` : ''}执行后将正式写入平台，确认继续？`
             : '确认执行导入？'
         }
         confirmText="确认导入"
-        loading={importMut.isPending}
+        loading={importMut.isPending || createFields.isPending}
         onConfirm={() => void runImport()}
       />
 
