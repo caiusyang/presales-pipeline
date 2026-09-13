@@ -14,7 +14,7 @@ export interface ProjectFieldDef {
   label: string
   kind: 'text' | 'textarea' | 'dict' | 'status' | 'multivalue' | 'computed'
   /** kind=dict 时的字典类型；industry/subIndustry 走行业→子行业级联 */
-  dict?: 'track' | 'industry' | 'solution' | 'safety_space'
+  dict?: 'track' | 'industry' | 'solution'
   /** 列表中默认是否显示 */
   defaultVisible: boolean
   /** 是否可编辑（出现在表单/行内编辑） */

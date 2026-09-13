@@ -255,7 +255,7 @@ public class ProjectService {
         String track = cleanNullable(request.track());
         String industry = cleanNullable(request.industry());
         String subIndustry = cleanNullable(request.subIndustry());
-        dictionaryService.validateProjectSelections(safetySpace, solution, subSolution, purchasedProducts,
+        dictionaryService.validateProjectSelections(solution, subSolution, purchasedProducts,
                 track, industry, subIndustry);
         if (WON_STATUS.equals(projectStatus)) {
             if (solution == null) {

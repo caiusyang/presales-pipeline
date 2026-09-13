@@ -52,6 +52,15 @@ class ApiIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.sortOrder").value(20));
 
+        // 历史 safety_space 字典不再约束普通文本字段，避免隐藏配置拒绝项目保存。
+        dataId(mockMvc.perform(post("/api/dictionaries").with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"type":"safety_space","value":"网络域","parentId":null,"sortOrder":10}
+                                """))
+                .andExpect(status().isOk())
+                .andReturn());
+
         long customFieldId = dataId(mockMvc.perform(post("/api/config/custom-fields").with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""

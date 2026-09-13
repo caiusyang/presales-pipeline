@@ -176,7 +176,6 @@ function dictUsageCount(item: DictNode): number {
     if (item.type === 'product') return p.purchasedProducts.includes(item.value)
     if (item.type === 'industry') return p.industry === item.value
     if (item.type === 'sub_industry') return p.subIndustry === item.value
-    if (item.type === 'safety_space') return p.safetySpace === item.value
     return false
   }).length
 }
@@ -540,7 +539,6 @@ export const mockApi: ApiClient = {
             : item.type === 'sub_solution' ? 'subSolution'
             : item.type === 'industry' ? 'industry'
             : item.type === 'sub_industry' ? 'subIndustry'
-            : item.type === 'safety_space' ? 'safetySpace'
             : null
           if (field && (p as unknown as Record<string, unknown>)[field] === item.value) {
             db.changeLogs.push({ id: nextId(), projectId: p.id, operator: '我', field, oldValue: item.value, newValue: nv, source: 'manual', createdAt: now() })

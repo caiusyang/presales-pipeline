@@ -138,10 +138,9 @@ public class DictionaryService {
     }
 
     @Transactional(readOnly = true)
-    public void validateProjectSelections(String safetySpace, String solution, String subSolution,
+    public void validateProjectSelections(String solution, String subSolution,
                                           List<String> purchasedProducts, String track,
                                           String industry, String subIndustry) {
-        validateIfConfigured("safety_space", safetySpace);
         DictionaryItem solutionItem = validateIfConfigured("solution", solution);
         DictionaryItem subSolutionItem = validateChildIfConfigured(
                 "sub_solution", subSolution, solutionItem, "细分解决方案不属于所选解决方案");
@@ -245,7 +244,6 @@ public class DictionaryService {
 
     private boolean matchesProject(Project project, DictionaryItem item) {
         String projectValue = switch (item.getType()) {
-            case "safety_space" -> project.getSafetySpace();
             case "solution" -> project.getSolution();
             case "sub_solution" -> project.getSubSolution();
             case "product" -> project.getPurchasedProducts().contains(item.getValue()) ? item.getValue() : null;
@@ -276,7 +274,6 @@ public class DictionaryService {
             String field = item.getType();
             String oldValue = item.getValue();
             switch (field) {
-                case "safety_space" -> project.setSafetySpace(newValue);
                 case "solution" -> project.setSolution(newValue);
                 case "sub_solution" -> project.setSubSolution(newValue);
                 case "product" -> project.setPurchasedProducts(project.getPurchasedProducts().stream()

@@ -183,7 +183,7 @@
 
 方案目录的类型依次为 `solution`、`sub_solution`、`product`，后两级创建时必须传对应上级的 `parentId`。`product` 的值只能从固定产品目录选择，产品编码不可重命名；产品与不同细分解决方案的关联仍可自行配置。
 
-`type` 使用小写字母、数字和下划线。内置业务类型包括 `track`、`solution`、`industry`、`sub_industry`，也可配置 `safety_space`。
+`type` 使用小写字母、数字和下划线。当前字典管理使用 `track`、`solution`、`sub_solution`、`product`、`industry`、`sub_industry`。项目的 `safetySpace` 保留为普通文本字段，不受字典约束。
 
 ## 配置
 
