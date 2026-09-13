@@ -8,6 +8,7 @@ import java.util.List;
 /** 当前系统支持的固定产品编码。 */
 public final class ProductCatalog {
 
+    public static final String EXPORT_FIELD_PREFIX = "product.";
     public static final List<String> CODES = List.of(
             "AAD", "WAF", "CFW", "ESA", "HSS", "NDR", "DEW", "DSC", "SecMaster",
             "DBSS", "CBH", "安全运营专业服务", "大模型防火墙", "智能体卫士"
@@ -40,5 +41,17 @@ public final class ProductCatalog {
             }
         }
         return CODES.stream().filter(normalized::contains).toList();
+    }
+
+    public static String exportFieldKey(String code) {
+        return EXPORT_FIELD_PREFIX + code;
+    }
+
+    public static String exportCode(String fieldKey) {
+        if (fieldKey == null || !fieldKey.startsWith(EXPORT_FIELD_PREFIX)) {
+            return null;
+        }
+        String code = fieldKey.substring(EXPORT_FIELD_PREFIX.length());
+        return CODES.stream().filter(item -> item.equals(code)).findFirst().orElse(null);
     }
 }

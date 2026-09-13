@@ -19,6 +19,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.hamcrest.Matchers.hasSize;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -137,6 +138,49 @@ class ProjectWinningIntegrationTest {
         mockMvc.perform(get("/api/projects").param("projectStatus", "方案设计"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.items[0].id").value(projectId));
+
+        mockMvc.perform(get("/api/export/fields").param("scope", "combined"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[?(@.key == 'purchasedProducts')]", hasSize(0)))
+                .andExpect(jsonPath("$.data[?(@.key == 'product.AAD')]", hasSize(1)))
+                .andExpect(jsonPath("$.data[?(@.key == 'product.智能体卫士')]", hasSize(1)));
+
+        mockMvc.perform(post("/api/export").with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "scope":"combined",
+                                  "columns":[
+                                    {"key":"projectName","title":"项目名称"},
+                                    {"key":"product.AAD","title":"AAD"},
+                                    {"key":"product.WAF","title":"WAF"},
+                                    {"key":"product.CFW","title":"CFW"},
+                                    {"key":"product.DBSS","title":"DBSS"}
+                                  ],
+                                  "filters":{"projectIds":[%d]}
+                                }
+                                """.formatted(projectId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.totalRows").value(1))
+                .andExpect(jsonPath("$.data.rows[0]['product.AAD']").value("已购"))
+                .andExpect(jsonPath("$.data.rows[0]['product.WAF']").value("已购"))
+                .andExpect(jsonPath("$.data.rows[0]['product.CFW']").value(""))
+                .andExpect(jsonPath("$.data.rows[0]['product.DBSS']").value("已购"));
+
+        mockMvc.perform(post("/api/export").with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "scope":"projects",
+                                  "columns":[{"key":"purchasedProducts","title":"旧版已购产品"}],
+                                  "filters":{"projectIds":[%d]}
+                                }
+                                """.formatted(projectId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.columns", hasSize(14)))
+                .andExpect(jsonPath("$.data.columns[0].key").value("product.AAD"))
+                .andExpect(jsonPath("$.data.rows[0]['product.AAD']").value("已购"))
+                .andExpect(jsonPath("$.data.rows[0]['product.CFW']").value(""));
 
         mockMvc.perform(get("/api/dictionaries").param("type", "solution"))
                 .andExpect(status().isOk())

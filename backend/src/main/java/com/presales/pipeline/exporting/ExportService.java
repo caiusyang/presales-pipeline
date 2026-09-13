@@ -13,6 +13,7 @@ import com.presales.pipeline.exporting.dto.ExportRequest;
 import com.presales.pipeline.exporting.dto.ExportResponse;
 import com.presales.pipeline.progress.ProgressLog;
 import com.presales.pipeline.progress.ProgressLogRepository;
+import com.presales.pipeline.product.ProductCatalog;
 import com.presales.pipeline.project.Project;
 import com.presales.pipeline.project.ProjectRepository;
 import com.presales.pipeline.revenue.Revenue;
@@ -43,7 +44,7 @@ public class ExportService {
                     field("id", "项目ID"), field("externalId", "外部系统编号"), field("customerName", "客户名称"),
                     field("projectName", "项目名称"), field("projectStatus", "项目状态"),
                     field("safetySpace", "安全空间"), field("solution", "解决方案"),
-                    field("subSolution", "细分解决方案"), field("purchasedProducts", "已购产品"),
+                    field("subSolution", "细分解决方案"),
                     field("track", "赛道"), field("industry", "行业"), field("subIndustry", "子行业"),
                     field("scenario", "场景"), field("keyRisks", "关键风险"), field("keyNeeds", "关键需求")
             ),
@@ -51,7 +52,7 @@ public class ExportService {
                     field("id", "项目ID"), field("externalId", "外部系统编号"), field("customerName", "客户名称"),
                     field("projectName", "项目名称"), field("projectStatus", "项目状态"),
                     field("safetySpace", "安全空间"), field("solution", "解决方案"),
-                    field("subSolution", "细分解决方案"), field("purchasedProducts", "已购产品"),
+                    field("subSolution", "细分解决方案"),
                     field("track", "赛道"), field("industry", "行业"), field("subIndustry", "子行业"),
                     field("scenario", "场景"), field("keyRisks", "关键风险"), field("keyNeeds", "关键需求"),
                     field("revenueTotal", "收入合计（万元）"), field("createdAt", "创建时间"), field("updatedAt", "更新时间")
@@ -90,6 +91,18 @@ public class ExportService {
     public List<ExportFieldResponse> availableFields(String requestedScope) {
         String scope = ExportScope.normalize(requestedScope);
         List<ExportFieldResponse> fields = new ArrayList<>(STANDARD_FIELDS.get(scope));
+        if (isProjectScope(scope)) {
+            int productIndex = 0;
+            while (productIndex < fields.size() && !"subSolution".equals(fields.get(productIndex).key())) {
+                productIndex++;
+            }
+            if (productIndex < fields.size()) {
+                productIndex++;
+            }
+            fields.addAll(productIndex, ProductCatalog.CODES.stream()
+                    .map(code -> field(ProductCatalog.exportFieldKey(code), code))
+                    .toList());
+        }
         if (ExportScope.COMBINED.equals(scope)) {
             revenueRepository.findActiveInRange(null, null).stream()
                     .map(Revenue::getMonth)
@@ -146,6 +159,7 @@ public class ExportService {
             scope = ExportScope.normalize(request.scope());
             columns = request.columns();
         }
+        columns = expandLegacyProductColumn(scope, columns);
         if (columns == null || columns.isEmpty()) {
             throw BusinessException.badRequest("至少选择一个导出列");
         }
@@ -283,6 +297,10 @@ public class ExportService {
         if (key.startsWith("custom.")) {
             return project.getCustomFields().get(key.substring("custom.".length()));
         }
+        String productCode = ProductCatalog.exportCode(key);
+        if (productCode != null) {
+            return project.getPurchasedProducts().contains(productCode) ? "已购" : "";
+        }
         return switch (key) {
             case "id" -> project.getId();
             case "externalId" -> project.getExternalId();
@@ -292,7 +310,6 @@ public class ExportService {
             case "safetySpace" -> project.getSafetySpace();
             case "solution" -> project.getSolution();
             case "subSolution" -> project.getSubSolution();
-            case "purchasedProducts" -> String.join("、", project.getPurchasedProducts());
             case "track" -> project.getTrack();
             case "industry" -> project.getIndustry();
             case "subIndustry" -> project.getSubIndustry();
@@ -339,6 +356,23 @@ public class ExportService {
 
     private static ExportFieldResponse field(String key, String title) {
         return new ExportFieldResponse(key, title);
+    }
+
+    private static boolean isProjectScope(String scope) {
+        return ExportScope.COMBINED.equals(scope) || ExportScope.PROJECTS.equals(scope);
+    }
+
+    private static List<ExportColumnRequest> expandLegacyProductColumn(String scope,
+                                                                        List<ExportColumnRequest> columns) {
+        if (columns == null || !isProjectScope(scope)) {
+            return columns;
+        }
+        return columns.stream()
+                .flatMap(column -> "purchasedProducts".equals(column.key())
+                        ? ProductCatalog.CODES.stream().map(code ->
+                                new ExportColumnRequest(ProductCatalog.exportFieldKey(code), code))
+                        : java.util.stream.Stream.of(column))
+                .toList();
     }
 
     private record ResolvedExport(String scope, List<ExportColumnRequest> columns) {

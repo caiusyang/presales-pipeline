@@ -175,7 +175,7 @@ export default function ExportPage() {
     <div className="mx-auto max-w-6xl space-y-4 p-6">
       <div>
         <h1 className="text-lg font-semibold">Excel 导出</h1>
-        <p className="text-sm text-muted-foreground">默认按项目汇聚主表、各月收入和全部进展，每个项目导出为一行</p>
+        <p className="text-sm text-muted-foreground">默认按项目汇聚主表、各产品购买情况、各月收入和全部进展，每个项目导出为一行</p>
       </div>
 
       <Tabs value={scope} onValueChange={handleScopeChange}>

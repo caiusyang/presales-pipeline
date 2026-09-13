@@ -78,11 +78,15 @@ describe('buildExportWorkbook', () => {
     const workbook = buildExportWorkbook(
       [
         { key: 'projectName', title: '项目名称' },
+        { key: 'product.AAD', title: 'AAD' },
+        { key: 'product.WAF', title: 'WAF' },
         { key: 'revenue.2026-08', title: '2026-08收入（万元）' },
         { key: 'progressSummary', title: '进展日志（日期：内容）' },
       ],
       [{
         projectName: '数据安全治理',
+        'product.AAD': '已购',
+        'product.WAF': '',
         'revenue.2026-08': 120.5,
         progressSummary: '2026-08-18：完成访谈\n2026-08-10：提交方案',
       }],
@@ -92,16 +96,19 @@ describe('buildExportWorkbook', () => {
     expect(workbook.SheetNames).toEqual(['项目综合表'])
     const sheet = workbook.Sheets['项目综合表']
     expect(sheet.A2.v).toBe('数据安全治理')
-    expect(sheet.B2.v).toBe(120.5)
-    expect(sheet.B2.t).toBe('n')
-    expect(sheet.B2.z).toBe('#,##0.00')
-    expect(sheet.C2.v).toContain('\n')
-    expect(sheet['!autofilter']?.ref).toBe('A1:C2')
+    expect(sheet.B2.v).toBe('已购')
+    expect(sheet.C2.v).toBe('')
+    expect(sheet.D2.v).toBe(120.5)
+    expect(sheet.D2.t).toBe('n')
+    expect(sheet.D2.z).toBe('#,##0.00')
+    expect(sheet.E2.v).toContain('\n')
+    expect(sheet['!autofilter']?.ref).toBe('A1:E2')
 
     const bytes = XLSX.write(workbook, { bookType: 'xlsx', type: 'array', cellStyles: true })
     const reopened = XLSX.read(bytes, { type: 'array', cellStyles: true })
     expect(reopened.SheetNames).toEqual(['项目综合表'])
-    expect(reopened.Sheets['项目综合表'].B2.v).toBe(120.5)
-    expect(reopened.Sheets['项目综合表'].C2.v).toContain('2026-08-10：提交方案')
+    expect(reopened.Sheets['项目综合表'].B2.v).toBe('已购')
+    expect(reopened.Sheets['项目综合表'].D2.v).toBe(120.5)
+    expect(reopened.Sheets['项目综合表'].E2.v).toContain('2026-08-10：提交方案')
   })
 })

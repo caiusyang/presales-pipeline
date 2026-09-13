@@ -38,6 +38,24 @@ import { seedDB, type MockDB } from './seed'
 // 修改种子结构时提升版本，避免旧 localStorage 让演示页面继续显示过时数据。
 const STORAGE_KEY = 'presales-pipeline-mock-v4'
 const LATENCY = 120
+const PRODUCT_EXPORT_PREFIX = 'product.'
+
+function productExportColumns() {
+  return PRODUCT_CATALOG.map((product) => ({ key: `${PRODUCT_EXPORT_PREFIX}${product}`, title: product }))
+}
+
+function expandLegacyProductColumns<T extends { key: string; title: string }>(scope: string | undefined, columns: T[]): T[] {
+  if (scope !== 'combined' && scope !== 'projects') return columns
+  return columns.flatMap((column) => column.key === 'purchasedProducts'
+    ? productExportColumns() as T[]
+    : [column])
+}
+
+function productCodeFromExportKey(key: string): string | null {
+  if (!key.startsWith(PRODUCT_EXPORT_PREFIX)) return null
+  const product = key.slice(PRODUCT_EXPORT_PREFIX.length)
+  return PRODUCT_CATALOG.includes(product as (typeof PRODUCT_CATALOG)[number]) ? product : null
+}
 
 let db: MockDB = load()
 
@@ -51,6 +69,10 @@ function load(): MockDB {
         projectStatus: project.projectStatus ?? '机会点识别',
         subSolution: project.subSolution ?? '',
         purchasedProducts: project.purchasedProducts ?? [],
+      }))
+      stored.exportTemplates = stored.exportTemplates.map((template) => ({
+        ...template,
+        columns: expandLegacyProductColumns(template.scope, template.columns),
       }))
       return stored
     }
@@ -585,11 +607,20 @@ export const mockApi: ApiClient = {
 
   // ---------------- 配置：导出模板 ----------------
   listExportTemplates() {
-    return delay(() => db.exportTemplates.map((t) => ({ ...t, columns: [...t.columns] })))
+    return delay(() => db.exportTemplates.map((t) => ({
+      ...t,
+      columns: expandLegacyProductColumns(t.scope, t.columns),
+    })))
   },
   createExportTemplate(input) {
     return delay(() => {
-      const t = { id: nextId(), ...input, createdAt: now(), updatedAt: now() }
+      const t = {
+        id: nextId(),
+        ...input,
+        columns: expandLegacyProductColumns(input.scope, input.columns),
+        createdAt: now(),
+        updatedAt: now(),
+      }
       db.exportTemplates.push(t)
       persist()
       return { ...t, columns: [...t.columns] }
@@ -601,7 +632,7 @@ export const mockApi: ApiClient = {
       if (!t) throw new Error('模板不存在')
       t.name = input.name
       t.scope = input.scope
-      t.columns = input.columns
+      t.columns = expandLegacyProductColumns(input.scope, input.columns)
       t.updatedAt = now()
       persist()
       return { ...t, columns: [...t.columns] }
@@ -777,9 +808,11 @@ export const mockApi: ApiClient = {
         const base: ExportFieldOption[] = [
           { key: 'id', title: '项目ID' },
           ...Object.entries(PROJECT_FIELD_LABELS)
-            .filter(([key]) => key !== 'progressText' && key !== 'revenueTotal')
+            .filter(([key]) => key !== 'progressText' && key !== 'revenueTotal' && key !== 'purchasedProducts')
             .map(([key, title]) => ({ key, title })),
         ]
+        const productIndex = base.findIndex((field) => field.key === 'subSolution') + 1
+        base.splice(productIndex, 0, ...productExportColumns())
         const activeProjectIds = new Set(db.projects.filter(alive).map((project) => project.id))
         const revenueMonths = [...new Set(db.revenues
           .filter((revenue) => activeProjectIds.has(revenue.projectId))
@@ -804,8 +837,10 @@ export const mockApi: ApiClient = {
       }
       if (scope === 'projects') {
         const base: ExportFieldOption[] = Object.entries(PROJECT_FIELD_LABELS)
-          .filter(([k]) => k !== 'progressText')
+          .filter(([k]) => k !== 'progressText' && k !== 'purchasedProducts')
           .map(([key, title]) => ({ key, title }))
+        const productIndex = base.findIndex((field) => field.key === 'subSolution') + 1
+        base.splice(productIndex, 0, ...productExportColumns())
         const custom = db.customFieldDefs.map((d) => ({ key: `custom.${d.fieldKey}`, title: d.label }))
         return [...base, ...custom]
       }
@@ -840,6 +875,7 @@ export const mockApi: ApiClient = {
         scp = t.scope
       }
       if (!scp || !cols?.length) throw new Error('请指定导出范围与列配置')
+      cols = expandLegacyProductColumns(scp, cols)
       const f = filters ?? {}
       const rows: Record<string, unknown>[] = []
       if (scp === 'combined') {
@@ -868,6 +904,10 @@ export const mockApi: ApiClient = {
             .map((log) => `${log.logDate}：${log.content}`)
             .join('\n')
           rows.push(Object.fromEntries(cols.map((column) => {
+            const productCode = productCodeFromExportKey(column.key)
+            if (productCode) {
+              return [column.key, project.purchasedProducts.includes(productCode) ? '已购' : '']
+            }
             if (column.key.startsWith('revenue.')) {
               return [column.key, monthlyRevenue.get(column.key.slice('revenue.'.length)) ?? null]
             }
@@ -895,6 +935,8 @@ export const mockApi: ApiClient = {
           rows.push(
             Object.fromEntries(
               cols.map((c) => {
+                const productCode = productCodeFromExportKey(c.key)
+                if (productCode) return [c.key, p.purchasedProducts.includes(productCode) ? '已购' : '']
                 if (c.key === 'revenueTotal') return [c.key, revenueTotalOf(p.id, f.startMonth, f.endMonth)]
                 if (c.key.startsWith('custom.')) return [c.key, p.customFields?.[c.key.slice(7)] ?? null]
                 return [c.key, (p as unknown as Record<string, unknown>)[c.key] ?? null]

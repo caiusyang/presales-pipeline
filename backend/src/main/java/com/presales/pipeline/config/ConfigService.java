@@ -10,6 +10,7 @@ import com.presales.pipeline.config.dto.ImportMappingRequest;
 import com.presales.pipeline.config.dto.ImportMappingResponse;
 import com.presales.pipeline.project.Project;
 import com.presales.pipeline.project.ProjectRepository;
+import com.presales.pipeline.product.ProductCatalog;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -254,7 +255,7 @@ public class ConfigService {
         Set<String> allowedKeys = allowedExportKeys(scope);
         Set<String> keys = new LinkedHashSet<>();
         List<Map<String, Object>> columns = new ArrayList<>();
-        for (ExportColumnRequest column : request.columns()) {
+        for (ExportColumnRequest column : expandLegacyProductColumns(scope, request.columns())) {
             String key = clean(column.key());
             if (!allowedKeys.contains(key) && !ExportScope.isRevenueMonthField(scope, key)) {
                 throw BusinessException.badRequest("当前导出范围不支持字段：" + key);
@@ -274,17 +275,19 @@ public class ConfigService {
         switch (scope) {
             case ExportScope.COMBINED -> {
                 keys.addAll(Set.of("id", "externalId", "customerName", "projectName", "projectStatus",
-                        "safetySpace", "solution", "subSolution", "purchasedProducts", "track", "industry",
+                        "safetySpace", "solution", "subSolution", "track", "industry",
                         "subIndustry", "scenario", "keyRisks", "keyNeeds", "revenueTotal", "progressSummary",
                         "createdAt", "updatedAt"));
+                ProductCatalog.CODES.forEach(code -> keys.add(ProductCatalog.exportFieldKey(code)));
                 customFieldRepository.findAllByDeletedFalseOrderBySortOrderAscIdAsc().forEach(definition ->
                         keys.add("custom." + definition.getFieldKey()));
             }
             case ExportScope.PROJECTS -> {
                 keys.addAll(Set.of("id", "externalId", "customerName", "projectName", "projectStatus",
-                        "safetySpace", "solution", "subSolution", "purchasedProducts", "track", "industry",
+                        "safetySpace", "solution", "subSolution", "track", "industry",
                         "subIndustry", "scenario", "keyRisks", "keyNeeds", "revenueTotal", "createdAt",
                         "updatedAt"));
+                ProductCatalog.CODES.forEach(code -> keys.add(ProductCatalog.exportFieldKey(code)));
                 customFieldRepository.findAllByDeletedFalseOrderBySortOrderAscIdAsc().forEach(definition ->
                         keys.add("custom." + definition.getFieldKey()));
             }
@@ -384,11 +387,23 @@ public class ConfigService {
 
     @SuppressWarnings("unchecked")
     private ExportTemplateResponse toResponse(ExportTemplate template) {
-        List<ExportColumnRequest> columns = template.getColumns().stream()
+        List<ExportColumnRequest> columns = expandLegacyProductColumns(template.getScope(), template.getColumns().stream()
                 .map(column -> new ExportColumnRequest(String.valueOf(column.get("key")), String.valueOf(column.get("title"))))
-                .toList();
+                .toList());
         return new ExportTemplateResponse(template.getId(), template.getName(), template.getScope(), columns,
                 template.getCreatedAt(), template.getUpdatedAt());
+    }
+
+    private List<ExportColumnRequest> expandLegacyProductColumns(String scope, List<ExportColumnRequest> columns) {
+        if ((!ExportScope.COMBINED.equals(scope) && !ExportScope.PROJECTS.equals(scope)) || columns == null) {
+            return columns;
+        }
+        return columns.stream()
+                .flatMap(column -> "purchasedProducts".equals(column.key())
+                        ? ProductCatalog.CODES.stream().map(code ->
+                                new ExportColumnRequest(ProductCatalog.exportFieldKey(code), code))
+                        : java.util.stream.Stream.of(column))
+                .toList();
     }
 
     private CustomFieldResponse toResponse(CustomFieldDefinition definition) {

@@ -318,7 +318,7 @@ export function seedDB(): MockDB {
         { key: 'track', title: '赛道' },
         { key: 'solution', title: '解决方案' },
         { key: 'subSolution', title: '细分解决方案' },
-        { key: 'purchasedProducts', title: '已购产品' },
+        ...PRODUCT_CATALOG.map((product) => ({ key: `product.${product}`, title: product })),
         { key: 'revenue.2026-07', title: '2026-07收入（万元）' },
         { key: 'revenue.2026-08', title: '2026-08收入（万元）' },
         { key: 'revenueTotal', title: '累计收入(万元)' },

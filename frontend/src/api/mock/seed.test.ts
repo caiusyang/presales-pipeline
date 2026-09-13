@@ -31,6 +31,9 @@ describe('demo seed data', () => {
     expect([...projectCounts.values()].some((count) => count > 1)).toBe(true)
     expect(db.exportTemplates.some((template) =>
       template.scope === 'combined'
-      && template.columns.some((column) => column.key === 'progressSummary'))).toBe(true)
+      && template.columns.some((column) => column.key === 'progressSummary')
+      && !template.columns.some((column) => column.key === 'purchasedProducts')
+      && PRODUCT_CATALOG.every((product) =>
+        template.columns.some((column) => column.key === `product.${product}`)))).toBe(true)
   })
 })
