@@ -15,9 +15,25 @@ interface Props {
   onChange: (cols: ExportColumn[]) => void
 }
 
+export function toggleAllExportColumns(
+  fields: ExportFieldOption[],
+  columns: ExportColumn[],
+): ExportColumn[] {
+  const selectedKeys = new Set(columns.map((column) => column.key))
+  const allSelected = fields.length > 0 && fields.every((field) => selectedKeys.has(field.key))
+  if (allSelected) return []
+  return [
+    ...columns,
+    ...fields
+      .filter((field) => !selectedKeys.has(field.key))
+      .map((field) => ({ key: field.key, title: field.title })),
+  ]
+}
+
 /** 导出列配置：左侧可选列勾选，右侧已选列排序/改名/移除 */
 export function ExportColumnConfig({ fields, columns, onChange }: Props) {
   const selectedKeys = new Set(columns.map((c) => c.key))
+  const allSelected = fields.length > 0 && fields.every((field) => selectedKeys.has(field.key))
 
   const toggle = (f: ExportFieldOption, checked: boolean) => {
     if (checked) onChange([...columns, { key: f.key, title: f.title }])
@@ -39,8 +55,20 @@ export function ExportColumnConfig({ fields, columns, onChange }: Props) {
     <div className="grid gap-4 md:grid-cols-2">
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">可选列</CardTitle>
-          <CardDescription>勾选加入导出，取消勾选移除</CardDescription>
+          <div className="flex items-start justify-between gap-3">
+            <div className="space-y-1">
+              <CardTitle className="text-base">可选列</CardTitle>
+              <CardDescription>勾选加入导出，取消勾选移除</CardDescription>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={fields.length === 0}
+              onClick={() => onChange(toggleAllExportColumns(fields, columns))}
+            >
+              {allSelected ? '取消全选' : '全选'}
+            </Button>
+          </div>
         </CardHeader>
         <CardContent>
           {fields.length === 0 ? (
