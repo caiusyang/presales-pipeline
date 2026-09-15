@@ -124,6 +124,9 @@ export function ProjectTable({
     }
     return (
       <Input
+        type={editing.key === 'securityBudget' ? 'number' : 'text'}
+        min={editing.key === 'securityBudget' ? '0' : undefined}
+        step={editing.key === 'securityBudget' ? '0.01' : undefined}
         autoFocus
         value={editing.value}
         onChange={(e) => setEditing({ ...editing, value: e.target.value })}
@@ -141,7 +144,10 @@ export function ProjectTable({
     const sortable = isSortableColumn(col.key)
     const active = sortBy === col.key
     return (
-      <TableHead key={col.key} className={cn(col.key === 'revenueTotal' && 'text-right')}>
+      <TableHead
+        key={col.key}
+        className={cn((col.key === 'revenueTotal' || col.key === 'securityBudget') && 'text-right')}
+      >
         {sortable ? (
           <button
             type="button"
@@ -185,7 +191,7 @@ export function ProjectTable({
                   key={col.key}
                   className={cn(
                     'max-w-56 truncate',
-                    col.key === 'revenueTotal' && 'text-right tabular-nums',
+                    (col.key === 'revenueTotal' || col.key === 'securityBudget') && 'text-right tabular-nums',
                     editable && !isEditing && 'cursor-text',
                   )}
                   title={isEditing ? undefined : getProjectFieldValue(p, col.key)}
@@ -193,8 +199,8 @@ export function ProjectTable({
                 >
                   {isEditing
                     ? renderEditor(p)
-                    : col.key === 'revenueTotal'
-                      ? fmtAmount(p.revenueTotal)
+                    : col.key === 'revenueTotal' || col.key === 'securityBudget'
+                      ? fmtAmount(col.key === 'revenueTotal' ? p.revenueTotal : p.securityBudget)
                       : getProjectFieldValue(p, col.key) || <span className="text-muted-foreground/50">-</span>}
                 </TableCell>
               )

@@ -1,9 +1,13 @@
 package com.presales.pipeline.project.dto;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
+import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
+import java.math.BigDecimal;
 import java.util.Map;
 import java.util.List;
 
@@ -12,7 +16,10 @@ public record ProjectRequest(
         @NotBlank @Size(max = 255) String customerName,
         @NotBlank @Size(max = 255) String projectName,
         @Size(max = 32) String projectStatus,
-        @Size(max = 255) String safetySpace,
+        @JsonAlias({"safetySpace", "safety_space", "security_budget"})
+        @DecimalMin(value = "0", message = "客户安全预算不能为负数")
+        @Digits(integer = 16, fraction = 2, message = "客户安全预算最多 16 位整数、2 位小数")
+        BigDecimal securityBudget,
         @Size(max = 255) String solution,
         @Size(max = 255) String subSolution,
         List<@Size(max = 255) String> purchasedProducts,

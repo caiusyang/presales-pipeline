@@ -90,7 +90,7 @@ public class BackupService {
         row.put("customerName", project.getCustomerName());
         row.put("projectName", project.getProjectName());
         row.put("projectStatus", project.getProjectStatus());
-        row.put("safetySpace", project.getSafetySpace());
+        row.put("securityBudget", project.getSecurityBudget());
         row.put("solution", project.getSolution());
         row.put("subSolution", project.getSubSolution());
         row.put("purchasedProducts", project.getPurchasedProducts());

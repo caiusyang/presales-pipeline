@@ -11,7 +11,7 @@ public record ProjectResponse(
         String customerName,
         String projectName,
         String projectStatus,
-        String safetySpace,
+        BigDecimal securityBudget,
         String solution,
         String subSolution,
         List<String> purchasedProducts,

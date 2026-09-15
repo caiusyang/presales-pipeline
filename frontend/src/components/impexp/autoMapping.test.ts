@@ -51,6 +51,40 @@ describe('Excel 自动字段映射', () => {
     expect(targets.map((target) => target.target)).toEqual(['customerName', 'projectName'])
   })
 
+  it('新旧预算表头都映射为数值预算字段，旧保存 key 自动升级', () => {
+    expect(autoMapColumns(['客户安全预算（万元）'], [['500.25']], [])[0].target).toBe('securityBudget')
+    expect(autoMapColumns(['安全空间'], [['88']], [])[0].target).toBe('securityBudget')
+
+    const restored = targetsFromColumnMap(['安全空间'], { 安全空间: 'safetySpace' })
+    expect(restored[0].target).toBe('securityBudget')
+
+    const output = buildImportRecords({
+      headers: ['客户名称', '项目名称', '客户安全预算（万元）'],
+      rows: [['甲客户', '甲项目', '1,234.50']],
+      columnMap: { 客户名称: 'customerName', 项目名称: 'projectName', '客户安全预算（万元）': 'securityBudget' },
+      valueRules: [],
+      today: '2026-09-12',
+    })
+    expect(output.problems).toEqual([])
+    expect(output.records[0].fields.securityBudget).toBe('1234.50')
+  })
+
+  it('预算导入在确认前标记负数、非数字和三位小数', () => {
+    const output = buildImportRecords({
+      headers: ['客户名称', '项目名称', '预算'],
+      rows: [
+        ['甲客户', '负数', '-1'],
+        ['乙客户', '文本', '待确认'],
+        ['丙客户', '精度', '1.234'],
+      ],
+      columnMap: { 客户名称: 'customerName', 项目名称: 'projectName', 预算: 'securityBudget' },
+      valueRules: [],
+      today: '2026-09-12',
+    })
+    expect(output.problems).toHaveLength(3)
+    expect(output.problems.every((problem) => problem.message.includes('客户安全预算'))).toBe(true)
+  })
+
   it('固定产品列自动映射为已购产品二级选项，非空值表示已购', () => {
     const headers = [
       '基础 / 客户名称',

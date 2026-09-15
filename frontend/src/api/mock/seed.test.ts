@@ -36,4 +36,15 @@ describe('demo seed data', () => {
       && PRODUCT_CATALOG.every((product) =>
         template.columns.some((column) => column.key === `product.${product}`)))).toBe(true)
   })
+
+  it('uses the built-in numeric customer security budget instead of a duplicate custom field', () => {
+    const db = seedDB()
+    expect(db.projects.every((project) =>
+      typeof project.securityBudget === 'number'
+      && project.securityBudget >= 0
+      && Math.abs(project.securityBudget * 100 - Math.round(project.securityBudget * 100)) < 1e-8)).toBe(true)
+    expect(db.customFieldDefs.some((field) => field.fieldKey === 'budget')).toBe(false)
+    expect(db.importMappings.every((mapping) =>
+      mapping.valueRules.every((rule) => rule.type !== 'default' || rule.field !== 'safetySpace'))).toBe(true)
+  })
 })

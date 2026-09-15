@@ -12,7 +12,7 @@ export type ProjectFieldKey = keyof Omit<
 export interface ProjectFieldDef {
   key: ProjectFieldKey | 'revenueTotal'
   label: string
-  kind: 'text' | 'textarea' | 'dict' | 'status' | 'multivalue' | 'computed'
+  kind: 'text' | 'number' | 'textarea' | 'dict' | 'status' | 'multivalue' | 'computed'
   /** kind=dict 时的字典类型；industry/subIndustry 走行业→子行业级联 */
   dict?: 'track' | 'industry' | 'solution'
   /** 列表中默认是否显示 */
@@ -32,7 +32,7 @@ export const PROJECT_FIELD_DEFS: ProjectFieldDef[] = [
   { key: 'solution', label: '解决方案', kind: 'dict', dict: 'solution', defaultVisible: true, editable: true },
   { key: 'subSolution', label: '细分解决方案', kind: 'dict', dict: 'solution', defaultVisible: true, editable: true },
   { key: 'purchasedProducts', label: '已购产品', kind: 'multivalue', defaultVisible: true, editable: true },
-  { key: 'safetySpace', label: '安全空间', kind: 'text', defaultVisible: false, editable: true },
+  { key: 'securityBudget', label: '客户安全预算（万元）', kind: 'number', defaultVisible: false, editable: true },
   { key: 'scenario', label: '应用场景', kind: 'textarea', defaultVisible: false, editable: true },
   { key: 'keyNeeds', label: '关键需求', kind: 'textarea', defaultVisible: false, editable: true },
   { key: 'keyRisks', label: '关键风险', kind: 'textarea', defaultVisible: false, editable: true },
@@ -44,6 +44,8 @@ export const PROJECT_FIELD_LABELS: Record<string, string> = Object.fromEntries(
 )
 /** 进展伪字段（导入映射目标用）：单元格按换行拆多条，格式 `日期：内容` */
 PROJECT_FIELD_LABELS['progressText'] = '进展(多行文本)'
+/** 兼容迁移前保存的修改日志字段名。 */
+PROJECT_FIELD_LABELS['safetySpace'] = '客户安全预算（万元）'
 
 /** 必填字段（前端先校验再提交） */
 export const REQUIRED_PROJECT_FIELDS: ProjectFieldKey[] = ['customerName', 'projectName']

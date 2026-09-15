@@ -190,10 +190,9 @@ export function seedDB(): MockDB {
 
   const customFieldDefs: CustomFieldDef[] = [
     { id: seq++, fieldKey: 'expected_sign_date', label: '预计签约日期', fieldType: 'date', required: false, options: [], sortOrder: 10 },
-    { id: seq++, fieldKey: 'budget', label: '预算(万元)', fieldType: 'number', required: false, options: [], sortOrder: 20 },
     {
       id: seq++, fieldKey: 'stage', label: '所处阶段', fieldType: 'option', required: false,
-      options: ['线索', '方案交流', 'POC', '招采', '谈判', '已签约', '暂停'], sortOrder: 30,
+      options: ['线索', '方案交流', 'POC', '招采', '谈判', '已签约', '暂停'], sortOrder: 20,
     },
   ]
 
@@ -203,7 +202,7 @@ export function seedDB(): MockDB {
   const progressLogs: ProgressLog[] = []
   const changeLogs: ChangeLog[] = []
 
-  const stageOptions = customFieldDefs[2].options
+  const stageOptions = customFieldDefs[1].options
   CUSTOMERS.forEach(([customer, industry, subIndustry], ci) => {
     const n = rand() > 0.6 ? 2 : 1
     for (let k = 0; k < n; k++) {
@@ -225,7 +224,7 @@ export function seedDB(): MockDB {
         customerName: customer,
         projectName: `${customer}${suffix}${k > 0 ? '（二期）' : ''}`,
         projectStatus,
-        safetySpace: ['网络边界', '云工作负载', '数据安全', '安全运营', 'AI 安全'][(ci + k) % 5],
+        securityBudget: Math.round((rand() * 900 + 50) * 100) / 100,
         solution: hasSolution ? catalog.name : '',
         subSolution: hasSubSolution ? subCatalog.name : '',
         purchasedProducts: [...purchasedProducts],
@@ -237,7 +236,6 @@ export function seedDB(): MockDB {
         keyRisks: rand() > 0.5 ? '预算收紧，决策链较长' : '竞争激烈，需要强化方案差异化',
         customFields: {
           expected_sign_date: `2026-${String(1 + Math.floor(rand() * 12)).padStart(2, '0')}-15`,
-          budget: Math.round(rand() * 900 + 50),
           stage: stageOptions[Math.floor(rand() * stageOptions.length)],
         },
         revenueTotal: 0,
@@ -299,7 +297,6 @@ export function seedDB(): MockDB {
       },
       valueRules: [
         { type: 'split', source: '行业', delimiter: '-', targets: ['industry', 'subIndustry'] },
-        { type: 'default', field: 'safetySpace', value: '待确认' },
       ],
       createdAt: now,
       updatedAt: now,

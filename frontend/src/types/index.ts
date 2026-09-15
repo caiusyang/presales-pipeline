@@ -16,8 +16,8 @@ export interface Project {
   customerName: string
   projectName: string
   projectStatus: ProjectStatus
-  /** 安全空间 */
-  safetySpace: string
+  /** 本项目对应的客户安全预算，单位万元 */
+  securityBudget: number | null
   solution: string
   subSolution: string
   purchasedProducts: string[]
@@ -85,7 +85,7 @@ export interface ChangeLog {
 }
 
 // ---------- 字典（树节点；行业节点的 children 为子行业） ----------
-export type DictType = 'track' | 'industry' | 'sub_industry' | 'solution' | 'sub_solution' | 'product' | 'safety_space' | string
+export type DictType = 'track' | 'industry' | 'sub_industry' | 'solution' | 'sub_solution' | 'product' | string
 export interface DictNode {
   id: ID
   type: DictType

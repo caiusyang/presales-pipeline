@@ -27,6 +27,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -191,7 +192,8 @@ public class ProjectService {
         changeAndSet(project, "customerName", project.getCustomerName(), normalized.customerName(), project::setCustomerName, source);
         changeAndSet(project, "projectName", project.getProjectName(), normalized.projectName(), project::setProjectName, source);
         changeAndSet(project, "projectStatus", project.getProjectStatus(), normalized.projectStatus(), project::setProjectStatus, source);
-        changeAndSet(project, "safetySpace", project.getSafetySpace(), normalized.safetySpace(), project::setSafetySpace, source);
+        changeAndSet(project, "securityBudget", project.getSecurityBudget(), normalized.securityBudget(),
+                project::setSecurityBudget, source);
         changeAndSet(project, "solution", project.getSolution(), normalized.solution(), project::setSolution, source);
         changeAndSet(project, "subSolution", project.getSubSolution(), normalized.subSolution(), project::setSubSolution, source);
         if (changeLogService.logIfChanged(project, "purchasedProducts", project.getPurchasedProducts(),
@@ -222,7 +224,7 @@ public class ProjectService {
 
     public ProjectResponse toResponse(Project project, BigDecimal revenueTotal) {
         return new ProjectResponse(project.getId(), project.getExternalId(), project.getCustomerName(),
-                project.getProjectName(), project.getProjectStatus(), project.getSafetySpace(), project.getSolution(),
+                project.getProjectName(), project.getProjectStatus(), project.getSecurityBudget(), project.getSolution(),
                 project.getSubSolution(), project.getPurchasedProducts(), project.getTrack(),
                 project.getIndustry(), project.getSubIndustry(), project.getScenario(), project.getKeyRisks(),
                 project.getKeyNeeds(), project.getCustomFields(), revenueTotal, project.isDeleted(),
@@ -248,7 +250,7 @@ public class ProjectService {
             throw BusinessException.conflict("同一客户下已存在同名项目");
         }
 
-        String safetySpace = cleanNullable(request.safetySpace());
+        BigDecimal securityBudget = normalizeSecurityBudget(request.securityBudget());
         String solution = cleanNullable(request.solution());
         String subSolution = cleanNullable(request.subSolution());
         List<String> purchasedProducts = normalizeProducts(request.purchasedProducts());
@@ -270,7 +272,7 @@ public class ProjectService {
         }
         Map<String, Object> customFields = configService.normalizeAndValidateCustomFields(request.customFields());
 
-        return new NormalizedProject(externalId, customerName, projectName, projectStatus, safetySpace, solution,
+        return new NormalizedProject(externalId, customerName, projectName, projectStatus, securityBudget, solution,
                 subSolution, purchasedProducts, track,
                 industry, subIndustry, cleanNullable(request.scenario()), cleanNullable(request.keyRisks()),
                 cleanNullable(request.keyNeeds()), customFields);
@@ -285,7 +287,7 @@ public class ProjectService {
         project.setCustomerName(value.customerName());
         project.setProjectName(value.projectName());
         project.setProjectStatus(value.projectStatus());
-        project.setSafetySpace(value.safetySpace());
+        project.setSecurityBudget(value.securityBudget());
         project.setSolution(value.solution());
         project.setSubSolution(value.subSolution());
         project.setPurchasedProducts(value.purchasedProducts());
@@ -298,8 +300,8 @@ public class ProjectService {
         project.setCustomFields(value.customFields());
     }
 
-    private void changeAndSet(Project project, String field, String oldValue, String newValue,
-                              java.util.function.Consumer<String> setter, String source) {
+    private <T> void changeAndSet(Project project, String field, T oldValue, T newValue,
+                                  java.util.function.Consumer<T> setter, String source) {
         if (changeLogService.logIfChanged(project, field, oldValue, newValue, source)) {
             setter.accept(newValue);
         }
@@ -331,6 +333,24 @@ public class ProjectService {
         return value.trim();
     }
 
+    private BigDecimal normalizeSecurityBudget(BigDecimal value) {
+        if (value == null) {
+            return null;
+        }
+        if (value.signum() < 0) {
+            throw BusinessException.badRequest("客户安全预算不能为负数");
+        }
+        try {
+            BigDecimal normalized = value.setScale(2, RoundingMode.UNNECESSARY);
+            if (normalized.precision() - normalized.scale() > 16) {
+                throw BusinessException.badRequest("客户安全预算超出允许范围");
+            }
+            return normalized;
+        } catch (ArithmeticException exception) {
+            throw BusinessException.badRequest("客户安全预算最多保留两位小数");
+        }
+    }
+
     private List<String> normalizeProducts(List<String> values) {
         return ProductCatalog.normalizeAll(values);
     }
@@ -355,7 +375,7 @@ public class ProjectService {
             String customerName,
             String projectName,
             String projectStatus,
-            String safetySpace,
+            BigDecimal securityBudget,
             String solution,
             String subSolution,
             List<String> purchasedProducts,

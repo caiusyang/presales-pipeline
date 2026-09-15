@@ -11,7 +11,7 @@ export function emptyProjectInput(): ProjectInput {
     customerName: '',
     projectName: '',
     projectStatus: '机会点识别',
-    safetySpace: '',
+    securityBudget: null,
     solution: '',
     subSolution: '',
     purchasedProducts: [],
@@ -32,7 +32,7 @@ export function projectToInput(p: Project): ProjectInput {
     customerName: p.customerName,
     projectName: p.projectName,
     projectStatus: p.projectStatus ?? '机会点识别',
-    safetySpace: p.safetySpace ?? '',
+    securityBudget: p.securityBudget ?? null,
     solution: p.solution ?? '',
     subSolution: p.subSolution ?? '',
     purchasedProducts: [...(p.purchasedProducts ?? [])],
@@ -51,6 +51,8 @@ export function validateProjectInput(input: ProjectInput, customDefs: CustomFiel
   for (const key of REQUIRED_PROJECT_FIELDS) {
     if (!String(input[key] ?? '').trim()) return `请填写${PROJECT_FIELD_LABELS[key] ?? key}`
   }
+  const budgetError = validateSecurityBudget(input.securityBudget)
+  if (budgetError) return budgetError
   if (input.projectStatus === '中标') {
     if (!input.solution.trim()) return '中标时请选择解决方案'
     if (!input.subSolution.trim()) return '中标时请选择细分解决方案'
@@ -78,8 +80,21 @@ export function normalizeForSubmit(input: ProjectInput, customDefs: CustomFieldD
   return {
     ...input,
     externalId: input.externalId?.trim() ? input.externalId.trim() : null,
+    securityBudget: input.securityBudget == null || String(input.securityBudget).trim() === ''
+      ? null
+      : Number(input.securityBudget),
     customFields,
   }
+}
+
+/** 客户安全预算：选填、非负、最多 16 位整数和 2 位小数。 */
+export function validateSecurityBudget(value: unknown): string | null {
+  if (value == null || String(value).trim() === '') return null
+  const text = String(value).trim()
+  if (!/^\d+(?:\.\d{1,2})?$/.test(text)) return '客户安全预算必须是非负数字，最多保留两位小数'
+  const [integer] = text.split('.')
+  if (integer.replace(/^0+/, '').length > 16) return '客户安全预算超出允许范围'
+  return null
 }
 
 /** 把一次单元格编辑合并进 ProjectInput；行业变更时联动清空子行业 */

@@ -1,6 +1,7 @@
 import type { CustomFieldType, MonthStr, ProjectInput, ValueRule } from '@/types'
 import type { ImportRecordInput } from '@/api/types'
 import { PROJECT_FIELD_LABELS, REQUIRED_PROJECT_FIELDS } from '@/lib/fields'
+import { validateSecurityBudget } from '@/components/project/project-utils'
 import { isValidMonth, parseProgressText } from '@/lib/format'
 import { normalizeProductCode, PRODUCT_CATALOG, type ProductCode } from '@/lib/products'
 
@@ -23,6 +24,11 @@ export const PRODUCT_PREFIX = 'product:'
 export const PRODUCT_SENTINEL = '__product__'
 /** 尚未落库的自定义字段目标；格式 `__new_custom__:<type>:<fieldKey>`。 */
 export const NEW_FIELD_PREFIX = '__new_custom__:'
+
+/** 兼容历史保存方案中的旧字段 key，新生成的方案只写新 key。 */
+export function canonicalProjectTarget(key: string): string {
+  return key === 'safetySpace' || key === 'safety_space' ? 'securityBudget' : key
+}
 
 export function normalizeDateValue(value: string): string | null {
   const text = value.trim()
@@ -73,7 +79,7 @@ export function effectiveTarget(t: ColumnTarget): string | null {
   if (t.target === PRODUCT_SENTINEL) {
     return t.product && normalizeProductCode(t.product) ? `${PRODUCT_PREFIX}${t.product}` : null
   }
-  return t.target
+  return canonicalProjectTarget(t.target)
 }
 
 /** 由界面选择状态组装契约 columnMap（Excel 列名 → 目标 key） */
@@ -90,7 +96,7 @@ export function buildColumnMap(headers: string[], targets: ColumnTarget[]): Reco
 /** 载入已存方案：columnMap → 界面选择状态（按列名对齐，未命中列忽略） */
 export function targetsFromColumnMap(headers: string[], columnMap: Record<string, string>): ColumnTarget[] {
   return headers.map((h) => {
-    const v = columnMap[h]
+    const v = canonicalProjectTarget(columnMap[h] ?? '')
     if (!v) return { target: '', month: '' }
     if (v.startsWith(REVENUE_PREFIX)) {
       return { target: REVENUE_SENTINEL, month: v.slice(REVENUE_PREFIX.length) }
@@ -141,7 +147,7 @@ export function draftsToRules(drafts: RuleDraft[]): ValueRule[] {
         const src = r.src.trim()
         if (!src || !r.field) continue
         mapping[src] ??= {}
-        mapping[src][r.field] = r.value
+        mapping[src][canonicalProjectTarget(r.field)] = r.value
       }
       rules.push({ type: 'exact', source: d.source, mapping })
     } else if (d.kind === 'split') {
@@ -149,9 +155,9 @@ export function draftsToRules(drafts: RuleDraft[]): ValueRule[] {
         .split(/[,，]/)
         .map((s) => s.trim())
         .filter(Boolean)
-      rules.push({ type: 'split', source: d.source, delimiter: d.delimiter || '-', targets })
+      rules.push({ type: 'split', source: d.source, delimiter: d.delimiter || '-', targets: targets.map(canonicalProjectTarget) })
     } else {
-      rules.push({ type: 'default', field: d.field, value: d.value })
+      rules.push({ type: 'default', field: canonicalProjectTarget(d.field), value: d.value })
     }
   }
   return rules
@@ -163,14 +169,14 @@ export function rulesToDrafts(rules: ValueRule[]): RuleDraft[] {
     if (r.type === 'exact') {
       const rows: ExactDraftRow[] = []
       for (const [src, m] of Object.entries(r.mapping)) {
-        for (const [field, value] of Object.entries(m)) rows.push({ src, field, value })
+        for (const [field, value] of Object.entries(m)) rows.push({ src, field: canonicalProjectTarget(field), value })
       }
       return { kind: 'exact', source: r.source, rows }
     }
     if (r.type === 'split') {
-      return { kind: 'split', source: r.source, delimiter: r.delimiter, targetsText: r.targets.join(',') }
+      return { kind: 'split', source: r.source, delimiter: r.delimiter, targetsText: r.targets.map(canonicalProjectTarget).join(',') }
     }
-    return { kind: 'default', field: r.field, value: r.value }
+    return { kind: 'default', field: canonicalProjectTarget(r.field), value: r.value }
   })
 }
 
@@ -209,7 +215,7 @@ export function buildImportRecords({ headers, rows, columnMap, valueRules, today
   const mappedCols: { idx: number; target: string }[] = []
   for (const [colName, target] of Object.entries(columnMap)) {
     const idx = colIndex.get(colName)
-    if (idx != null && target) mappedCols.push({ idx, target })
+    if (idx != null && target) mappedCols.push({ idx, target: canonicalProjectTarget(target) })
   }
 
   const problems: TransformProblem[] = []
@@ -226,6 +232,7 @@ export function buildImportRecords({ headers, rows, columnMap, valueRules, today
 
     /** 写字段（custom. 入 customFields）；overwrite=false 时仅填空值（default 规则语义） */
     const setField = (key: string, value: string, overwrite: boolean) => {
+      key = canonicalProjectTarget(key)
       if (key.startsWith(NEW_FIELD_PREFIX)) {
         const [, fieldType, fieldKey] = key.match(/^__new_custom__:(text|number|date):([a-z][a-z0-9_]*)$/) ?? []
         if (!fieldType || !fieldKey) return
@@ -241,6 +248,7 @@ export function buildImportRecords({ headers, rows, columnMap, valueRules, today
         if (cur != null && String(cur).trim() !== '') return
       }
       if (key.startsWith(CUSTOM_PREFIX)) customFields[key.slice(CUSTOM_PREFIX.length)] = value
+      else if (key === 'securityBudget') fields[key] = normalizeNumberValue(value) ?? value
       else fields[key] = value
     }
 
@@ -326,6 +334,8 @@ export function buildImportRecords({ headers, rows, columnMap, valueRules, today
         problems.push({ excelRow, message: `必填字段缺失：${PROJECT_FIELD_LABELS[f] ?? f}` })
       }
     }
+    const budgetError = validateSecurityBudget(fields.securityBudget)
+    if (budgetError) problems.push({ excelRow, message: budgetError })
 
     records.push({ fields: fields as unknown as Partial<ProjectInput>, revenues, progress })
   })

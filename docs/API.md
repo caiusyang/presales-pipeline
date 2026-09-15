@@ -38,7 +38,7 @@
   "customerName": "示例客户",
   "projectName": "数据安全治理",
   "projectStatus": "中标",
-  "safetySpace": "数据域",
+  "securityBudget": 500.00,
   "solution": "安全咨询",
   "subSolution": "数据安全规划",
   "purchasedProducts": ["DSC", "DEW"],
@@ -183,7 +183,7 @@
 
 方案目录的类型依次为 `solution`、`sub_solution`、`product`，后两级创建时必须传对应上级的 `parentId`。`product` 的值只能从固定产品目录选择，产品编码不可重命名；产品与不同细分解决方案的关联仍可自行配置。
 
-`type` 使用小写字母、数字和下划线。当前字典管理使用 `track`、`solution`、`sub_solution`、`product`、`industry`、`sub_industry`。项目的 `safetySpace` 保留为普通文本字段，不受字典约束。
+`type` 使用小写字母、数字和下划线。当前字典管理使用 `track`、`solution`、`sub_solution`、`product`、`industry`、`sub_industry`。项目的 `securityBudget` 是“客户安全预算（万元）”数值字段，不属于字典；`scenario` 是应用场景自由文本，也不属于字典。
 
 ## 配置
 

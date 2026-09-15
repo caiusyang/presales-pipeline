@@ -216,7 +216,9 @@ export function buildExportWorkbook(
     for (let rowIndex = 1; rowIndex < aoa.length; rowIndex += 1) {
       const cell = ws[XLSX.utils.encode_cell({ r: rowIndex, c: columnIndex })]
       if (!cell) continue
-      if (column.key === 'revenueTotal' || column.key.startsWith('revenue.')) cell.z = '#,##0.00'
+      if (column.key === 'securityBudget' || column.key === 'revenueTotal' || column.key.startsWith('revenue.')) {
+        cell.z = '#,##0.00'
+      }
       if (column.key.endsWith('At')) cell.z = 'yyyy-mm-dd hh:mm'
       else if (column.key.endsWith('Date')) cell.z = 'yyyy-mm-dd'
       if (column.key === 'progressSummary') {

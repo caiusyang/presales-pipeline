@@ -9,6 +9,7 @@ import org.hibernate.type.SqlTypes;
 
 import java.util.LinkedHashMap;
 import java.util.ArrayList;
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 
@@ -28,8 +29,8 @@ public class Project extends SoftDeletableEntity {
     @Column(name = "project_status", length = 32)
     private String projectStatus = "机会点识别";
 
-    @Column(name = "safety_space")
-    private String safetySpace;
+    @Column(name = "security_budget", precision = 18, scale = 2)
+    private BigDecimal securityBudget;
 
     private String solution;
 
@@ -95,12 +96,12 @@ public class Project extends SoftDeletableEntity {
         this.projectStatus = projectStatus;
     }
 
-    public String getSafetySpace() {
-        return safetySpace;
+    public BigDecimal getSecurityBudget() {
+        return securityBudget;
     }
 
-    public void setSafetySpace(String safetySpace) {
-        this.safetySpace = safetySpace;
+    public void setSecurityBudget(BigDecimal securityBudget) {
+        this.securityBudget = securityBudget;
     }
 
     public String getSolution() {

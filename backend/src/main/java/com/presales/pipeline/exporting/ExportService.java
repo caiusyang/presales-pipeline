@@ -43,7 +43,7 @@ public class ExportService {
             ExportScope.COMBINED, List.of(
                     field("id", "项目ID"), field("externalId", "外部系统编号"), field("customerName", "客户名称"),
                     field("projectName", "项目名称"), field("projectStatus", "项目状态"),
-                    field("safetySpace", "安全空间"), field("solution", "解决方案"),
+                    field("securityBudget", "客户安全预算（万元）"), field("solution", "解决方案"),
                     field("subSolution", "细分解决方案"),
                     field("track", "赛道"), field("industry", "行业"), field("subIndustry", "子行业"),
                     field("scenario", "场景"), field("keyRisks", "关键风险"), field("keyNeeds", "关键需求")
@@ -51,7 +51,7 @@ public class ExportService {
             ExportScope.PROJECTS, List.of(
                     field("id", "项目ID"), field("externalId", "外部系统编号"), field("customerName", "客户名称"),
                     field("projectName", "项目名称"), field("projectStatus", "项目状态"),
-                    field("safetySpace", "安全空间"), field("solution", "解决方案"),
+                    field("securityBudget", "客户安全预算（万元）"), field("solution", "解决方案"),
                     field("subSolution", "细分解决方案"),
                     field("track", "赛道"), field("industry", "行业"), field("subIndustry", "子行业"),
                     field("scenario", "场景"), field("keyRisks", "关键风险"), field("keyNeeds", "关键需求"),
@@ -159,7 +159,7 @@ public class ExportService {
             scope = ExportScope.normalize(request.scope());
             columns = request.columns();
         }
-        columns = expandLegacyProductColumn(scope, columns);
+        columns = normalizeLegacyColumns(scope, columns);
         if (columns == null || columns.isEmpty()) {
             throw BusinessException.badRequest("至少选择一个导出列");
         }
@@ -307,7 +307,7 @@ public class ExportService {
             case "customerName" -> project.getCustomerName();
             case "projectName" -> project.getProjectName();
             case "projectStatus" -> project.getProjectStatus();
-            case "safetySpace" -> project.getSafetySpace();
+            case "securityBudget" -> project.getSecurityBudget();
             case "solution" -> project.getSolution();
             case "subSolution" -> project.getSubSolution();
             case "track" -> project.getTrack();
@@ -362,8 +362,8 @@ public class ExportService {
         return ExportScope.COMBINED.equals(scope) || ExportScope.PROJECTS.equals(scope);
     }
 
-    private static List<ExportColumnRequest> expandLegacyProductColumn(String scope,
-                                                                        List<ExportColumnRequest> columns) {
+    private static List<ExportColumnRequest> normalizeLegacyColumns(String scope,
+                                                                     List<ExportColumnRequest> columns) {
         if (columns == null || !isProjectScope(scope)) {
             return columns;
         }
@@ -371,7 +371,10 @@ public class ExportService {
                 .flatMap(column -> "purchasedProducts".equals(column.key())
                         ? ProductCatalog.CODES.stream().map(code ->
                                 new ExportColumnRequest(ProductCatalog.exportFieldKey(code), code))
-                        : java.util.stream.Stream.of(column))
+                        : java.util.stream.Stream.of(new ExportColumnRequest(
+                                "safetySpace".equals(column.key()) || "safety_space".equals(column.key())
+                                        ? "securityBudget" : column.key(),
+                                column.title())))
                 .toList();
     }
 

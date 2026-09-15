@@ -19,7 +19,7 @@ const FIELD_ALIASES: Record<string, string[]> = {
   customerName: ['客户名称', '客户名', '客户'],
   projectName: ['项目名称', '项目名', '项目'],
   projectStatus: ['项目状态', '状态'],
-  safetySpace: ['安全空间'],
+  securityBudget: ['客户安全预算', '客户安全预算（万元）', '客户安全预算(万元)', '安全空间'],
   solution: ['解决方案', '方案'],
   subSolution: ['细分解决方案', '子解决方案'],
   purchasedProducts: ['已购产品', '购买产品', '产品'],

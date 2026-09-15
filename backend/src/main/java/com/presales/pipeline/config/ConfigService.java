@@ -247,8 +247,8 @@ public class ConfigService {
 
     private void apply(ImportMapping mapping, ImportMappingRequest request) {
         mapping.setName(clean(request.name()));
-        mapping.setColumnMap(request.columnMap());
-        mapping.setValueRules(request.valueRules());
+        mapping.setColumnMap(normalizeImportColumnMap(request.columnMap()));
+        mapping.setValueRules(normalizeValueRules(request.valueRules()));
     }
 
     private void apply(ExportTemplate template, ExportTemplateRequest request, String scope) {
@@ -256,7 +256,7 @@ public class ConfigService {
         Set<String> keys = new LinkedHashSet<>();
         List<Map<String, Object>> columns = new ArrayList<>();
         for (ExportColumnRequest column : expandLegacyProductColumns(scope, request.columns())) {
-            String key = clean(column.key());
+            String key = canonicalProjectFieldKey(clean(column.key()));
             if (!allowedKeys.contains(key) && !ExportScope.isRevenueMonthField(scope, key)) {
                 throw BusinessException.badRequest("当前导出范围不支持字段：" + key);
             }
@@ -275,7 +275,7 @@ public class ConfigService {
         switch (scope) {
             case ExportScope.COMBINED -> {
                 keys.addAll(Set.of("id", "externalId", "customerName", "projectName", "projectStatus",
-                        "safetySpace", "solution", "subSolution", "track", "industry",
+                        "securityBudget", "solution", "subSolution", "track", "industry",
                         "subIndustry", "scenario", "keyRisks", "keyNeeds", "revenueTotal", "progressSummary",
                         "createdAt", "updatedAt"));
                 ProductCatalog.CODES.forEach(code -> keys.add(ProductCatalog.exportFieldKey(code)));
@@ -284,7 +284,7 @@ public class ConfigService {
             }
             case ExportScope.PROJECTS -> {
                 keys.addAll(Set.of("id", "externalId", "customerName", "projectName", "projectStatus",
-                        "safetySpace", "solution", "subSolution", "track", "industry",
+                        "securityBudget", "solution", "subSolution", "track", "industry",
                         "subIndustry", "scenario", "keyRisks", "keyNeeds", "revenueTotal", "createdAt",
                         "updatedAt"));
                 ProductCatalog.CODES.forEach(code -> keys.add(ProductCatalog.exportFieldKey(code)));
@@ -381,14 +381,15 @@ public class ConfigService {
     }
 
     private ImportMappingResponse toResponse(ImportMapping mapping) {
-        return new ImportMappingResponse(mapping.getId(), mapping.getName(), mapping.getColumnMap(),
-                mapping.getValueRules(), mapping.getCreatedAt(), mapping.getUpdatedAt());
+        return new ImportMappingResponse(mapping.getId(), mapping.getName(), normalizeImportColumnMap(mapping.getColumnMap()),
+                normalizeValueRules(mapping.getValueRules()), mapping.getCreatedAt(), mapping.getUpdatedAt());
     }
 
     @SuppressWarnings("unchecked")
     private ExportTemplateResponse toResponse(ExportTemplate template) {
         List<ExportColumnRequest> columns = expandLegacyProductColumns(template.getScope(), template.getColumns().stream()
-                .map(column -> new ExportColumnRequest(String.valueOf(column.get("key")), String.valueOf(column.get("title"))))
+                .map(column -> new ExportColumnRequest(canonicalProjectFieldKey(String.valueOf(column.get("key"))),
+                        String.valueOf(column.get("title"))))
                 .toList());
         return new ExportTemplateResponse(template.getId(), template.getName(), template.getScope(), columns,
                 template.getCreatedAt(), template.getUpdatedAt());
@@ -402,8 +403,60 @@ public class ConfigService {
                 .flatMap(column -> "purchasedProducts".equals(column.key())
                         ? ProductCatalog.CODES.stream().map(code ->
                                 new ExportColumnRequest(ProductCatalog.exportFieldKey(code), code))
-                        : java.util.stream.Stream.of(column))
+                        : java.util.stream.Stream.of(new ExportColumnRequest(
+                                canonicalProjectFieldKey(column.key()), column.title())))
                 .toList();
+    }
+
+    private Map<String, Object> normalizeImportColumnMap(Map<String, Object> columnMap) {
+        Map<String, Object> normalized = new LinkedHashMap<>();
+        if (columnMap == null) {
+            return normalized;
+        }
+        columnMap.forEach((header, target) -> normalized.put(header,
+                target instanceof String key ? canonicalProjectFieldKey(key) : target));
+        return normalized;
+    }
+
+    private List<Map<String, Object>> normalizeValueRules(List<Map<String, Object>> rules) {
+        if (rules == null) {
+            return List.of();
+        }
+        return rules.stream().map(this::normalizeValueRule).toList();
+    }
+
+    private Map<String, Object> normalizeValueRule(Map<String, Object> rule) {
+        Map<String, Object> normalized = new LinkedHashMap<>(rule);
+        Object field = normalized.get("field");
+        if (field instanceof String key) {
+            normalized.put("field", canonicalProjectFieldKey(key));
+        }
+        Object targets = normalized.get("targets");
+        if (targets instanceof List<?> list) {
+            normalized.put("targets", list.stream()
+                    .map(target -> target instanceof String key ? canonicalProjectFieldKey(key) : target)
+                    .toList());
+        }
+        Object mapping = normalized.get("mapping");
+        if (mapping instanceof Map<?, ?> sourceValues) {
+            Map<String, Object> normalizedMapping = new LinkedHashMap<>();
+            sourceValues.forEach((sourceValue, assignments) -> {
+                if (assignments instanceof Map<?, ?> assignmentMap) {
+                    Map<String, Object> normalizedAssignments = new LinkedHashMap<>();
+                    assignmentMap.forEach((key, value) -> normalizedAssignments.put(
+                            canonicalProjectFieldKey(String.valueOf(key)), value));
+                    normalizedMapping.put(String.valueOf(sourceValue), normalizedAssignments);
+                } else {
+                    normalizedMapping.put(String.valueOf(sourceValue), assignments);
+                }
+            });
+            normalized.put("mapping", normalizedMapping);
+        }
+        return normalized;
+    }
+
+    private String canonicalProjectFieldKey(String key) {
+        return "safetySpace".equals(key) || "safety_space".equals(key) ? "securityBudget" : key;
     }
 
     private CustomFieldResponse toResponse(CustomFieldDefinition definition) {

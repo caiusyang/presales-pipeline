@@ -60,6 +60,18 @@ export function ProjectFormFields({ value, onChange }: Props) {
     if (def.kind === 'textarea') {
       return <Textarea value={v} onChange={(e) => set(def.key, e.target.value)} rows={3} />
     }
+    if (def.kind === 'number') {
+      return (
+        <Input
+          type="number"
+          min="0"
+          step="0.01"
+          value={v}
+          onChange={(e) => set(def.key, e.target.value)}
+          placeholder="请输入金额"
+        />
+      )
+    }
     if (def.kind === 'status') {
       return (
         <Select

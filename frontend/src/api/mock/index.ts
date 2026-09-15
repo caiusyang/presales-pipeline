@@ -9,6 +9,7 @@ import type {
   ProjectInput,
   ProjectProductRecord,
   Revenue,
+  ValueRule,
 } from '@/types'
 import type {
   ApiClient,
@@ -29,6 +30,8 @@ import { PROJECT_FIELD_LABELS, REQUIRED_PROJECT_FIELDS } from '@/lib/fields'
 import { DATE_RE, MONTH_RE } from '@/lib/format'
 import { normalizeProductCode, PRODUCT_CATALOG } from '@/lib/products'
 import { seedDB, type MockDB } from './seed'
+import { canonicalProjectTarget } from '@/components/impexp/importTransform'
+import { validateSecurityBudget } from '@/components/project/project-utils'
 
 // ============================================================
 // Mock 实现：在浏览器内模拟后端契约（判重 / dryRun / 修改日志 /
@@ -36,7 +39,7 @@ import { seedDB, type MockDB } from './seed'
 // ============================================================
 
 // 修改种子结构时提升版本，避免旧 localStorage 让演示页面继续显示过时数据。
-const STORAGE_KEY = 'presales-pipeline-mock-v4'
+const STORAGE_KEY = 'presales-pipeline-mock-v5'
 const LATENCY = 120
 const PRODUCT_EXPORT_PREFIX = 'product.'
 
@@ -48,7 +51,25 @@ function expandLegacyProductColumns<T extends { key: string; title: string }>(sc
   if (scope !== 'combined' && scope !== 'projects') return columns
   return columns.flatMap((column) => column.key === 'purchasedProducts'
     ? productExportColumns() as T[]
-    : [column])
+    : [{ ...column, key: canonicalProjectTarget(column.key) }])
+}
+
+function normalizeImportMapping(mapping: ImportMapping): ImportMapping {
+  const columnMap = Object.fromEntries(Object.entries(mapping.columnMap)
+    .map(([header, target]) => [header, canonicalProjectTarget(target)]))
+  const valueRules = mapping.valueRules.map((rule): ValueRule => {
+    if (rule.type === 'default') return { ...rule, field: canonicalProjectTarget(rule.field) }
+    if (rule.type === 'split') return { ...rule, targets: rule.targets.map(canonicalProjectTarget) }
+    return {
+      ...rule,
+      mapping: Object.fromEntries(Object.entries(rule.mapping).map(([source, assignments]) => [
+        source,
+        Object.fromEntries(Object.entries(assignments)
+          .map(([field, value]) => [canonicalProjectTarget(field), value])),
+      ])),
+    }
+  })
+  return { ...mapping, columnMap, valueRules }
 }
 
 function productCodeFromExportKey(key: string): string | null {
@@ -66,6 +87,7 @@ function load(): MockDB {
       const stored = JSON.parse(raw) as MockDB
       stored.projects = stored.projects.map((project) => ({
         ...project,
+        securityBudget: project.securityBudget ?? null,
         projectStatus: project.projectStatus ?? '机会点识别',
         subSolution: project.subSolution ?? '',
         purchasedProducts: project.purchasedProducts ?? [],
@@ -74,6 +96,7 @@ function load(): MockDB {
         ...template,
         columns: expandLegacyProductColumns(template.scope, template.columns),
       }))
+      stored.importMappings = stored.importMappings.map(normalizeImportMapping)
       return stored
     }
   } catch {
@@ -106,6 +129,12 @@ const alive = (p: Project) => !p.deleted
 const norm = (s: unknown) => (s ?? '').toString().trim()
 const round2 = (n: number) => Math.round(n * 100) / 100
 
+function normalizeSecurityBudgetValue(value: unknown): number | null {
+  const error = validateSecurityBudget(value)
+  if (error) throw new Error(error)
+  return value == null || String(value).trim() === '' ? null : Number(value)
+}
+
 function revenueTotalOf(projectId: ID, startMonth?: string, endMonth?: string): number {
   return round2(
     db.revenues
@@ -122,7 +151,7 @@ function revenueTotalOf(projectId: ID, startMonth?: string, endMonth?: string): 
 /** 字段级修改日志 */
 function diffAndLog(projectId: ID, before: Project, after: ProjectInput, source: 'manual' | 'import') {
   const fields: (keyof ProjectInput)[] = [
-    'externalId', 'customerName', 'projectName', 'projectStatus', 'safetySpace', 'solution', 'subSolution',
+    'externalId', 'customerName', 'projectName', 'projectStatus', 'securityBudget', 'solution', 'subSolution',
     'purchasedProducts', 'track',
     'industry', 'subIndustry', 'scenario', 'keyRisks', 'keyNeeds',
   ]
@@ -147,6 +176,8 @@ function validateProjectFields(fields: Partial<ProjectInput>) {
   for (const f of REQUIRED_PROJECT_FIELDS) {
     if (!norm(fields[f])) throw new Error(`必填字段缺失：${PROJECT_FIELD_LABELS[f] ?? f}`)
   }
+  const budgetError = validateSecurityBudget(fields.securityBudget)
+  if (budgetError) throw new Error(budgetError)
   const invalidProduct = (fields.purchasedProducts ?? []).find((product) => !normalizeProductCode(product))
   if (invalidProduct) throw new Error(`已购产品只能是：${PRODUCT_CATALOG.join('、')}`)
   if (fields.projectStatus === '中标') {
@@ -251,7 +282,11 @@ export const mockApi: ApiClient = {
   createProject(input) {
     return delay(() => {
       validateProjectFields(input)
-      const p: Project = { ...input, id: nextId(), revenueTotal: 0, deleted: false, createdAt: now(), updatedAt: now() }
+      const p: Project = {
+        ...input,
+        securityBudget: normalizeSecurityBudgetValue(input.securityBudget),
+        id: nextId(), revenueTotal: 0, deleted: false, createdAt: now(), updatedAt: now(),
+      }
       db.projects.push(p)
       persist()
       return { ...p }
@@ -264,8 +299,9 @@ export const mockApi: ApiClient = {
       if (idx < 0) throw new Error('项目不存在')
       validateProjectFields(input)
       const before = db.projects[idx]
-      diffAndLog(id, before, input, 'manual')
-      db.projects[idx] = { ...before, ...input, updatedAt: now() }
+      const normalizedInput = { ...input, securityBudget: normalizeSecurityBudgetValue(input.securityBudget) }
+      diffAndLog(id, before, normalizedInput, 'manual')
+      db.projects[idx] = { ...before, ...normalizedInput, updatedAt: now() }
       persist()
       return { ...db.projects[idx], revenueTotal: revenueTotalOf(id) }
     })
@@ -574,12 +610,12 @@ export const mockApi: ApiClient = {
 
   // ---------------- 配置：导入映射 ----------------
   listImportMappings() {
-    return delay(() => db.importMappings.map((m) => ({ ...m })))
+    return delay(() => db.importMappings.map((m) => normalizeImportMapping(m)))
   },
   createImportMapping(input) {
     return delay(() => {
       const m: ImportMapping = { id: nextId(), ...input, createdAt: now(), updatedAt: now() }
-      db.importMappings.push(m)
+      db.importMappings.push(normalizeImportMapping(m))
       persist()
       return { ...m }
     })
@@ -589,8 +625,9 @@ export const mockApi: ApiClient = {
       const m = db.importMappings.find((x) => x.id === id)
       if (!m) throw new Error('映射方案不存在')
       m.name = input.name
-      m.columnMap = input.columnMap
-      m.valueRules = input.valueRules
+      const normalized = normalizeImportMapping({ ...m, ...input })
+      m.columnMap = normalized.columnMap
+      m.valueRules = normalized.valueRules
       m.updatedAt = now()
       persist()
       return { ...m }
@@ -728,7 +765,6 @@ export const mockApi: ApiClient = {
               const p: Project = {
                 externalId: null,
                 projectStatus: '机会点识别',
-                safetySpace: '',
                 solution: '',
                 subSolution: '',
                 purchasedProducts: [],
@@ -742,6 +778,7 @@ export const mockApi: ApiClient = {
                 projectName: '',
                 customFields: {},
                 ...rec.fields,
+                securityBudget: normalizeSecurityBudgetValue(rec.fields.securityBudget),
                 id: nextId(),
                 revenueTotal: 0,
                 deleted: false,
@@ -761,7 +798,7 @@ export const mockApi: ApiClient = {
                 customerName: existing.customerName,
                 projectName: existing.projectName,
                 projectStatus: existing.projectStatus ?? '机会点识别',
-                safetySpace: existing.safetySpace,
+                securityBudget: existing.securityBudget,
                 solution: existing.solution,
                 subSolution: existing.subSolution ?? '',
                 purchasedProducts: [...(existing.purchasedProducts ?? [])],
@@ -777,6 +814,7 @@ export const mockApi: ApiClient = {
                 if (k === 'customFields') continue
                 (merged as Record<string, unknown>)[k] = v
               }
+              merged.securityBudget = normalizeSecurityBudgetValue(merged.securityBudget)
               for (const [k, v] of Object.entries(rec.fields.customFields ?? {})) {
                 if (v == null || norm(v) === '') delete merged.customFields[k]
                 else merged.customFields[k] = v

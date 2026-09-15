@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { emptyProjectInput, projectToInput, validateProjectInput } from './project-utils'
+import {
+  emptyProjectInput,
+  normalizeForSubmit,
+  projectToInput,
+  validateProjectInput,
+  validateSecurityBudget,
+} from './project-utils'
 import { solutionCascade } from '@/lib/fields'
 import type { DictNode, Project } from '@/types'
 
@@ -35,6 +41,31 @@ describe('项目状态与中标信息', () => {
       updatedAt: '2026-01-01T00:00:00',
     } as Project
     expect(projectToInput(project).purchasedProducts).toEqual(['WAF', 'DDoS'])
+  })
+})
+
+describe('客户安全预算', () => {
+  it('允许空值、0、整数和两位小数', () => {
+    expect(validateSecurityBudget(null)).toBeNull()
+    expect(validateSecurityBudget('')).toBeNull()
+    expect(validateSecurityBudget(0)).toBeNull()
+    expect(validateSecurityBudget('500')).toBeNull()
+    expect(validateSecurityBudget('500.25')).toBeNull()
+  })
+
+  it('拒绝负数、非数字、三位小数和超大金额', () => {
+    expect(validateSecurityBudget('-1')).toContain('非负数字')
+    expect(validateSecurityBudget('待确认')).toContain('非负数字')
+    expect(validateSecurityBudget('1.234')).toContain('两位小数')
+    expect(validateSecurityBudget('10000000000000000')).toContain('超出允许范围')
+  })
+
+  it('提交前将表单文本规整为数值或空值', () => {
+    const input = emptyProjectInput()
+    ;(input as unknown as Record<string, unknown>).securityBudget = '88.50'
+    expect(normalizeForSubmit(input, []).securityBudget).toBe(88.5)
+    ;(input as unknown as Record<string, unknown>).securityBudget = ''
+    expect(normalizeForSubmit(input, []).securityBudget).toBeNull()
   })
 })
 

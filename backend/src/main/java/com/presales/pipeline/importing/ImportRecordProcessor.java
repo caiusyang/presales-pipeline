@@ -126,7 +126,7 @@ public class ImportRecordProcessor {
                         existing == null ? null : existing.getProjectName(), "项目名称"),
                 value(fields, existing, "projectStatus", "project_status",
                         existing == null ? ProjectService.DEFAULT_STATUS : existing.getProjectStatus()),
-                value(fields, existing, "safetySpace", "safety_space", existing == null ? null : existing.getSafetySpace()),
+                budgetValue(fields, existing),
                 value(fields, existing, "solution", "solution", existing == null ? null : existing.getSolution()),
                 value(fields, existing, "subSolution", "sub_solution", existing == null ? null : existing.getSubSolution()),
                 listValue(fields, "purchasedProducts", "purchased_products",
@@ -154,6 +154,22 @@ public class ImportRecordProcessor {
         }
         return java.util.Arrays.stream(String.valueOf(raw).split("[,，]"))
                 .map(String::trim).filter(value -> !value.isEmpty()).toList();
+    }
+
+    private BigDecimal budgetValue(FieldBag fields, Project existing) {
+        BigDecimal fallback = existing == null ? null : existing.getSecurityBudget();
+        if (!fields.containsAny("securityBudget", "security_budget", "safetySpace", "safety_space")) {
+            return fallback;
+        }
+        Object raw = fields.rawAny("securityBudget", "security_budget", "safetySpace", "safety_space");
+        if (raw == null || String.valueOf(raw).isBlank()) {
+            return null;
+        }
+        try {
+            return new BigDecimal(String.valueOf(raw).trim().replace(",", ""));
+        } catch (NumberFormatException exception) {
+            throw BusinessException.badRequest("客户安全预算必须是数字");
+        }
     }
 
     private String value(FieldBag fields, Project existing, String camelKey, String snakeKey, String fallback) {
@@ -198,6 +214,14 @@ public class ImportRecordProcessor {
 
         private Object raw(String camelKey, String snakeKey) {
             return fields.containsKey(camelKey) ? fields.get(camelKey) : fields.get(snakeKey);
+        }
+
+        private boolean containsAny(String... keys) {
+            return java.util.Arrays.stream(keys).anyMatch(fields::containsKey);
+        }
+
+        private Object rawAny(String... keys) {
+            return java.util.Arrays.stream(keys).filter(fields::containsKey).findFirst().map(fields::get).orElse(null);
         }
 
         private String string(String camelKey, String snakeKey) {
