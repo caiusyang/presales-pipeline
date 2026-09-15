@@ -44,7 +44,5 @@ describe('demo seed data', () => {
       && project.securityBudget >= 0
       && Math.abs(project.securityBudget * 100 - Math.round(project.securityBudget * 100)) < 1e-8)).toBe(true)
     expect(db.customFieldDefs.some((field) => field.fieldKey === 'budget')).toBe(false)
-    expect(db.importMappings.every((mapping) =>
-      mapping.valueRules.every((rule) => rule.type !== 'default' || rule.field !== 'safetySpace'))).toBe(true)
   })
 })

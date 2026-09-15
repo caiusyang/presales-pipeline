@@ -158,10 +158,10 @@ public class ImportRecordProcessor {
 
     private BigDecimal budgetValue(FieldBag fields, Project existing) {
         BigDecimal fallback = existing == null ? null : existing.getSecurityBudget();
-        if (!fields.containsAny("securityBudget", "security_budget", "safetySpace", "safety_space")) {
+        if (!fields.containsAny("securityBudget", "security_budget")) {
             return fallback;
         }
-        Object raw = fields.rawAny("securityBudget", "security_budget", "safetySpace", "safety_space");
+        Object raw = fields.rawAny("securityBudget", "security_budget");
         if (raw == null || String.valueOf(raw).isBlank()) {
             return null;
         }

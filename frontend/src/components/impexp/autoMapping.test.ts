@@ -51,12 +51,8 @@ describe('Excel 自动字段映射', () => {
     expect(targets.map((target) => target.target)).toEqual(['customerName', 'projectName'])
   })
 
-  it('新旧预算表头都映射为数值预算字段，旧保存 key 自动升级', () => {
+  it('客户安全预算表头映射为数值预算字段', () => {
     expect(autoMapColumns(['客户安全预算（万元）'], [['500.25']], [])[0].target).toBe('securityBudget')
-    expect(autoMapColumns(['安全空间'], [['88']], [])[0].target).toBe('securityBudget')
-
-    const restored = targetsFromColumnMap(['安全空间'], { 安全空间: 'safetySpace' })
-    expect(restored[0].target).toBe('securityBudget')
 
     const output = buildImportRecords({
       headers: ['客户名称', '项目名称', '客户安全预算（万元）'],

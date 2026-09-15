@@ -159,7 +159,7 @@ public class ExportService {
             scope = ExportScope.normalize(request.scope());
             columns = request.columns();
         }
-        columns = normalizeLegacyColumns(scope, columns);
+        columns = expandLegacyProductColumn(scope, columns);
         if (columns == null || columns.isEmpty()) {
             throw BusinessException.badRequest("至少选择一个导出列");
         }
@@ -362,8 +362,8 @@ public class ExportService {
         return ExportScope.COMBINED.equals(scope) || ExportScope.PROJECTS.equals(scope);
     }
 
-    private static List<ExportColumnRequest> normalizeLegacyColumns(String scope,
-                                                                     List<ExportColumnRequest> columns) {
+    private static List<ExportColumnRequest> expandLegacyProductColumn(String scope,
+                                                                        List<ExportColumnRequest> columns) {
         if (columns == null || !isProjectScope(scope)) {
             return columns;
         }
@@ -371,10 +371,7 @@ public class ExportService {
                 .flatMap(column -> "purchasedProducts".equals(column.key())
                         ? ProductCatalog.CODES.stream().map(code ->
                                 new ExportColumnRequest(ProductCatalog.exportFieldKey(code), code))
-                        : java.util.stream.Stream.of(new ExportColumnRequest(
-                                "safetySpace".equals(column.key()) || "safety_space".equals(column.key())
-                                        ? "securityBudget" : column.key(),
-                                column.title())))
+                        : java.util.stream.Stream.of(column))
                 .toList();
     }
 

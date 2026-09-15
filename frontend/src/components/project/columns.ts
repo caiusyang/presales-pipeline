@@ -50,9 +50,6 @@ export function loadColumnStates(available: PipelineColumn[]): ColumnState[] {
           (s): s is ColumnState =>
             typeof s === 'object' && s !== null && typeof (s as ColumnState).key === 'string',
         )
-        stored = stored.map((state) => state.key === 'safetySpace'
-          ? { ...state, key: 'securityBudget' }
-          : state)
       }
     }
   } catch {

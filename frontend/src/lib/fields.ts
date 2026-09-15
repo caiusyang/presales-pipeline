@@ -44,8 +44,6 @@ export const PROJECT_FIELD_LABELS: Record<string, string> = Object.fromEntries(
 )
 /** 进展伪字段（导入映射目标用）：单元格按换行拆多条，格式 `日期：内容` */
 PROJECT_FIELD_LABELS['progressText'] = '进展(多行文本)'
-/** 兼容迁移前保存的修改日志字段名。 */
-PROJECT_FIELD_LABELS['safetySpace'] = '客户安全预算（万元）'
 
 /** 必填字段（前端先校验再提交） */
 export const REQUIRED_PROJECT_FIELDS: ProjectFieldKey[] = ['customerName', 'projectName']

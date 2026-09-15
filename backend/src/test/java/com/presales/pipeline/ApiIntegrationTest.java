@@ -54,15 +54,6 @@ class ApiIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.sortOrder").value(20));
 
-        // 历史 safety_space 字典仍可读取，但不再约束项目的客户安全预算。
-        dataId(mockMvc.perform(post("/api/dictionaries").with(csrf())
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"type":"safety_space","value":"网络域","parentId":null,"sortOrder":10}
-                                """))
-                .andExpect(status().isOk())
-                .andReturn());
-
         long customFieldId = dataId(mockMvc.perform(post("/api/config/custom-fields").with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -146,7 +137,7 @@ class ApiIntegrationTest {
                                   "externalId":"EXT-001",
                                   "customerName":"示例银行",
                                   "projectName":"数据安全治理",
-                                  "safetySpace":500.25,
+                                  "securityBudget":500.25,
                                   "solution":"安全咨询",
                                   "track":"数据安全",
                                   "industry":"金融",
@@ -160,7 +151,6 @@ class ApiIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.revenueTotal").value(0))
                 .andExpect(jsonPath("$.data.securityBudget").value(500.25))
-                .andExpect(jsonPath("$.data.safetySpace").doesNotExist())
                 .andReturn());
 
         mockMvc.perform(get("/api/projects"))
@@ -355,7 +345,7 @@ class ApiIntegrationTest {
     }
 
     @Test
-    void securityBudgetValidationAndLegacyConfigurationsWork() throws Exception {
+    void securityBudgetValidationImportExportAndBackupWork() throws Exception {
         long projectId = dataId(mockMvc.perform(post("/api/projects").with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -398,19 +388,6 @@ class ApiIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.securityBudget").value(88.5));
 
-        mockMvc.perform(post("/api/config/import-mappings").with(csrf())
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "name":"旧预算字段映射",
-                                  "columnMap":{"安全空间":"safetySpace"},
-                                  "valueRules":[{"type":"default","field":"safetySpace","value":"100"}]
-                                }
-                                """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.columnMap['安全空间']").value("securityBudget"))
-                .andExpect(jsonPath("$.data.valueRules[0].field").value("securityBudget"));
-
         mockMvc.perform(post("/api/import").with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -418,7 +395,7 @@ class ApiIntegrationTest {
                                   "dryRun":false,
                                   "records":[
                                     {
-                                      "fields":{"customerName":"预算导入客户","projectName":"有效预算","safetySpace":"1,234.50","customFields":{}},
+                                      "fields":{"customerName":"预算导入客户","projectName":"有效预算","securityBudget":"1,234.50","customFields":{}},
                                       "revenues":[],"progress":[]
                                     },
                                     {
@@ -441,9 +418,9 @@ class ApiIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
-                                  "name":"旧预算字段模板",
+                                  "name":"客户安全预算模板",
                                   "scope":"projects",
-                                  "columns":[{"key":"safetySpace","title":"原安全空间"}]
+                                  "columns":[{"key":"securityBudget","title":"客户安全预算（万元）"}]
                                 }
                                 """))
                 .andExpect(status().isOk())
@@ -461,8 +438,7 @@ class ApiIntegrationTest {
 
         mockMvc.perform(get("/api/export/fields").param("scope", "projects"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data[?(@.key == 'securityBudget')]", hasSize(1)))
-                .andExpect(jsonPath("$.data[?(@.key == 'safetySpace')]", hasSize(0)));
+                .andExpect(jsonPath("$.data[?(@.key == 'securityBudget')]", hasSize(1)));
 
         mockMvc.perform(get("/api/backup"))
                 .andExpect(status().isOk())

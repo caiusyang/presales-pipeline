@@ -9,7 +9,6 @@ import type {
   ProjectInput,
   ProjectProductRecord,
   Revenue,
-  ValueRule,
 } from '@/types'
 import type {
   ApiClient,
@@ -30,7 +29,6 @@ import { PROJECT_FIELD_LABELS, REQUIRED_PROJECT_FIELDS } from '@/lib/fields'
 import { DATE_RE, MONTH_RE } from '@/lib/format'
 import { normalizeProductCode, PRODUCT_CATALOG } from '@/lib/products'
 import { seedDB, type MockDB } from './seed'
-import { canonicalProjectTarget } from '@/components/impexp/importTransform'
 import { validateSecurityBudget } from '@/components/project/project-utils'
 
 // ============================================================
@@ -39,7 +37,7 @@ import { validateSecurityBudget } from '@/components/project/project-utils'
 // ============================================================
 
 // 修改种子结构时提升版本，避免旧 localStorage 让演示页面继续显示过时数据。
-const STORAGE_KEY = 'presales-pipeline-mock-v5'
+const STORAGE_KEY = 'presales-pipeline-mock-v6'
 const LATENCY = 120
 const PRODUCT_EXPORT_PREFIX = 'product.'
 
@@ -51,25 +49,7 @@ function expandLegacyProductColumns<T extends { key: string; title: string }>(sc
   if (scope !== 'combined' && scope !== 'projects') return columns
   return columns.flatMap((column) => column.key === 'purchasedProducts'
     ? productExportColumns() as T[]
-    : [{ ...column, key: canonicalProjectTarget(column.key) }])
-}
-
-function normalizeImportMapping(mapping: ImportMapping): ImportMapping {
-  const columnMap = Object.fromEntries(Object.entries(mapping.columnMap)
-    .map(([header, target]) => [header, canonicalProjectTarget(target)]))
-  const valueRules = mapping.valueRules.map((rule): ValueRule => {
-    if (rule.type === 'default') return { ...rule, field: canonicalProjectTarget(rule.field) }
-    if (rule.type === 'split') return { ...rule, targets: rule.targets.map(canonicalProjectTarget) }
-    return {
-      ...rule,
-      mapping: Object.fromEntries(Object.entries(rule.mapping).map(([source, assignments]) => [
-        source,
-        Object.fromEntries(Object.entries(assignments)
-          .map(([field, value]) => [canonicalProjectTarget(field), value])),
-      ])),
-    }
-  })
-  return { ...mapping, columnMap, valueRules }
+    : [column])
 }
 
 function productCodeFromExportKey(key: string): string | null {
@@ -87,7 +67,6 @@ function load(): MockDB {
       const stored = JSON.parse(raw) as MockDB
       stored.projects = stored.projects.map((project) => ({
         ...project,
-        securityBudget: project.securityBudget ?? null,
         projectStatus: project.projectStatus ?? '机会点识别',
         subSolution: project.subSolution ?? '',
         purchasedProducts: project.purchasedProducts ?? [],
@@ -96,7 +75,6 @@ function load(): MockDB {
         ...template,
         columns: expandLegacyProductColumns(template.scope, template.columns),
       }))
-      stored.importMappings = stored.importMappings.map(normalizeImportMapping)
       return stored
     }
   } catch {
@@ -610,12 +588,12 @@ export const mockApi: ApiClient = {
 
   // ---------------- 配置：导入映射 ----------------
   listImportMappings() {
-    return delay(() => db.importMappings.map((m) => normalizeImportMapping(m)))
+    return delay(() => db.importMappings.map((m) => ({ ...m })))
   },
   createImportMapping(input) {
     return delay(() => {
       const m: ImportMapping = { id: nextId(), ...input, createdAt: now(), updatedAt: now() }
-      db.importMappings.push(normalizeImportMapping(m))
+      db.importMappings.push(m)
       persist()
       return { ...m }
     })
@@ -625,9 +603,8 @@ export const mockApi: ApiClient = {
       const m = db.importMappings.find((x) => x.id === id)
       if (!m) throw new Error('映射方案不存在')
       m.name = input.name
-      const normalized = normalizeImportMapping({ ...m, ...input })
-      m.columnMap = normalized.columnMap
-      m.valueRules = normalized.valueRules
+      m.columnMap = input.columnMap
+      m.valueRules = input.valueRules
       m.updatedAt = now()
       persist()
       return { ...m }
