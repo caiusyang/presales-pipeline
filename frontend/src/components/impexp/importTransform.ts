@@ -22,7 +22,7 @@ export const REVENUE_SENTINEL = '__revenue__'
 export const PRODUCT_PREFIX = 'product:'
 /** 列映射 UI 中「已购产品（指定产品）」的内部哨兵值。 */
 export const PRODUCT_SENTINEL = '__product__'
-/** 尚未落库的自定义字段目标；格式 `__new_custom__:<type>:<fieldKey>`。 */
+/** 待新增字段目标；保存时可附加 `:<URI 编码的名称>`，兼容未附名称的已有方案。 */
 export const NEW_FIELD_PREFIX = '__new_custom__:'
 
 export function normalizeDateValue(value: string): string | null {
@@ -51,6 +51,21 @@ export interface PendingCustomField {
   fieldKey: string
   label: string
   fieldType: Extract<CustomFieldType, 'text' | 'number' | 'date'>
+}
+
+export function parsePendingField(target: string, fallbackLabel = ''): PendingCustomField | null {
+  const match = target.match(/^__new_custom__:(text|number|date):([a-z][a-z0-9_]*)(?::(.*))?$/)
+  if (!match) return null
+  const [, fieldType, fieldKey, encodedLabel] = match
+  let label = fallbackLabel.slice(0, 255)
+  if (encodedLabel !== undefined) {
+    try {
+      label = decodeURIComponent(encodedLabel)
+    } catch {
+      // 损坏的名称编码使用原列名，保持旧方案可编辑。
+    }
+  }
+  return { fieldKey, label, fieldType: fieldType as PendingCustomField['fieldType'] }
 }
 
 // ---------- 列映射界面状态 ----------
@@ -83,7 +98,11 @@ export function buildColumnMap(headers: string[], targets: ColumnTarget[]): Reco
   headers.forEach((h, i) => {
     const t = targets[i]
     const eff = t ? effectiveTarget(t) : null
-    if (eff) map[h] = eff
+    if (eff) {
+      map[h] = eff.startsWith(NEW_FIELD_PREFIX) && t.pendingField
+        ? `${NEW_FIELD_PREFIX}${t.pendingField.fieldType}:${t.pendingField.fieldKey}:${encodeURIComponent(t.pendingField.label.trim())}`
+        : eff
+    }
   })
   return map
 }
@@ -101,12 +120,12 @@ export function targetsFromColumnMap(headers: string[], columnMap: Record<string
       if (product) return { target: PRODUCT_SENTINEL, month: '', product }
     }
     if (v.startsWith(NEW_FIELD_PREFIX)) {
-      const [, fieldType, fieldKey] = v.match(/^__new_custom__:(text|number|date):([a-z][a-z0-9_]*)$/) ?? []
-      if (fieldType && fieldKey) {
+      const field = parsePendingField(v, h)
+      if (field) {
         return {
-          target: v,
+          target: `${NEW_FIELD_PREFIX}${field.fieldType}:${field.fieldKey}`,
           month: '',
-          pendingField: { fieldKey, label: h.slice(0, 255), fieldType: fieldType as PendingCustomField['fieldType'] },
+          pendingField: field,
         }
       }
     }
@@ -228,8 +247,9 @@ export function buildImportRecords({ headers, rows, columnMap, valueRules, today
     /** 写字段（custom. 入 customFields）；overwrite=false 时仅填空值（default 规则语义） */
     const setField = (key: string, value: string, overwrite: boolean) => {
       if (key.startsWith(NEW_FIELD_PREFIX)) {
-        const [, fieldType, fieldKey] = key.match(/^__new_custom__:(text|number|date):([a-z][a-z0-9_]*)$/) ?? []
-        if (!fieldType || !fieldKey) return
+        const field = parsePendingField(key)
+        if (!field) return
+        const { fieldType, fieldKey } = field
         let normalized = value
         if (fieldType === 'number') normalized = normalizeNumberValue(value) ?? value
         if (fieldType === 'date') normalized = normalizeDateValue(value) ?? value

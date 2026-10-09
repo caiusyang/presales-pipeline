@@ -142,6 +142,13 @@ export function StepConfirm({ parsed, columnMap, valueRules, mappingId, pendingF
           <CardContent className="pt-4 text-sm text-blue-800 sm:pt-5">
             当前预检不会创建或校验待新增字段。点击正式导入并再次确认后，系统会先创建
             {pendingFields.length} 个自定义字段，再写入对应数据。
+            <ul className="mt-2 list-inside list-disc space-y-1">
+              {pendingFields.map((field) => (
+                <li key={field.fieldKey} className="break-words">
+                  {field.label}（{{ text: '文本', number: '数字', date: '日期' }[field.fieldType]}）
+                </li>
+              ))}
+            </ul>
           </CardContent>
         </Card>
       )}

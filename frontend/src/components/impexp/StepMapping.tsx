@@ -86,12 +86,15 @@ export function StepMapping({
 
   const monthInvalid = (t: ColumnTarget) => t.target === REVENUE_SENTINEL && !isValidMonth(t.month)
   const productInvalid = (t: ColumnTarget) => t.target === PRODUCT_SENTINEL && !t.product
+  const pendingNameInvalid = (t: ColumnTarget) => t.target.startsWith(NEW_FIELD_PREFIX)
+    && (!t.pendingField?.label.trim() || t.pendingField.label.trim().length > 255)
   const hasInvalidMonth = targets.some(monthInvalid)
   const hasInvalidProduct = targets.some(productInvalid)
+  const hasInvalidName = targets.some(pendingNameInvalid)
   const hasAnyMapping = targets.some((t) => effectiveTarget(t) != null)
   const hasDataRows = parsed.totalRows > 0
   const pendingCount = targets.filter((target) => target.target.startsWith(NEW_FIELD_PREFIX)).length
-  const canNext = hasAnyMapping && !hasInvalidMonth && !hasInvalidProduct && hasDataRows
+  const canNext = hasAnyMapping && !hasInvalidMonth && !hasInvalidProduct && !hasInvalidName && hasDataRows
 
   const setTarget = (i: number, t: ColumnTarget) => onTargetsChange(targets.map((old, j) => (j === i ? t : old)))
 
@@ -113,6 +116,10 @@ export function StepMapping({
   }
 
   const handleSave = async (name: string) => {
+    if (hasInvalidName) {
+      toast.error('请填写待新增字段名称（1–255 个字符）')
+      return
+    }
     setSaving(true)
     try {
       const input = { name, columnMap: buildColumnMap(parsed.headers, targets), valueRules: draftsToRules(ruleDrafts) }
@@ -164,7 +171,7 @@ export function StepMapping({
             />
           )}
           {mappingId != null && <Badge variant="info">当前方案：{mappingName}</Badge>}
-          <Button variant="outline" onClick={() => setSaveOpen(true)} disabled={!hasAnyMapping}>
+          <Button variant="outline" onClick={() => setSaveOpen(true)} disabled={!hasAnyMapping || hasInvalidName}>
             <Save /> 另存为方案
           </Button>
         </CardContent>
@@ -174,7 +181,7 @@ export function StepMapping({
         <CardHeader>
           <CardTitle className="text-base">列映射</CardTitle>
           <CardDescription>
-            已自动优先匹配现有字段和固定产品；产品列请选择“已购产品”及具体产品，单元格非空即记为已购
+            已自动优先匹配现有字段和固定产品；待新增字段可修改名称和类型，确认正式导入后创建。产品列非空即记为已购。
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -246,23 +253,46 @@ export function StepMapping({
                           )}
                         </div>
                         {isPending && t.pendingField && (
-                          <div className="mt-2 flex flex-wrap items-center gap-2">
-                            <Badge variant="info">待新增</Badge>
-                            <span className="text-xs text-muted-foreground">识别类型</span>
-                            <Select
-                              className="w-28"
-                              value={t.pendingField.fieldType}
-                              onValueChange={(value) => setPendingType(
-                                i,
-                                t.pendingField!,
-                                value as PendingCustomField['fieldType'],
-                              )}
-                              options={[
-                                { value: 'text', label: '文本' },
-                                { value: 'number', label: '数字' },
-                                { value: 'date', label: '日期' },
-                              ]}
-                            />
+                          <div className="mt-2 space-y-2">
+                            <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                              <span className="shrink-0">新字段名称</span>
+                              <Input
+                                className="min-w-40 flex-1"
+                                aria-label={`${h}的新字段名称`}
+                                aria-invalid={pendingNameInvalid(t)}
+                                aria-describedby={pendingNameInvalid(t) ? `pending-name-error-${i}` : undefined}
+                                value={t.pendingField.label}
+                                maxLength={255}
+                                placeholder="输入导入后的字段名称"
+                                onChange={(e) => setTarget(i, {
+                                  ...t,
+                                  pendingField: { ...t.pendingField!, label: e.target.value },
+                                })}
+                              />
+                            </label>
+                            {pendingNameInvalid(t) && (
+                              <div id={`pending-name-error-${i}`} className="text-xs text-destructive">
+                                请填写字段名称（1–255 个字符）
+                              </div>
+                            )}
+                            <div className="flex flex-wrap items-center gap-2">
+                              <Badge variant="info">待新增</Badge>
+                              <span className="text-xs text-muted-foreground">识别类型</span>
+                              <Select
+                                className="w-28"
+                                value={t.pendingField.fieldType}
+                                onValueChange={(value) => setPendingType(
+                                  i,
+                                  t.pendingField!,
+                                  value as PendingCustomField['fieldType'],
+                                )}
+                                options={[
+                                  { value: 'text', label: '文本' },
+                                  { value: 'number', label: '数字' },
+                                  { value: 'date', label: '日期' },
+                                ]}
+                              />
+                            </div>
                           </div>
                         )}
                         {invalid && <div className="mt-1 text-xs text-destructive">请填写有效月份（YYYY-MM）</div>}

@@ -159,4 +159,44 @@ describe('Excel 自动字段映射', () => {
     expect(customFields[pending[0].fieldKey]).toBe('1234.50')
     expect(customFields[pending[1].fieldKey]).toBe('2026-09-12')
   })
+
+  it('修改新增字段名称后，保存再载入保留名称、字段标识和对应数据', () => {
+    const headers = ['客户名称', '项目名称', '金额_原表', '时间_原表', '说明_原表']
+    const rows = [['甲客户', '甲项目', '1,234.50', '2026/9/12', '重点跟进']]
+    const targets = autoMapColumns(headers, rows, [])
+    const labels = ['  预计金额（万元）  ', '下次拜访日期', '备注:进度/完成率 50%']
+    targets.slice(2).forEach((target, i) => { target.pendingField!.label = labels[i] })
+    const fields = pendingFieldsFromTargets(targets)
+    expect(fields.map((field) => field.label)).toEqual(labels.map((label) => label.trim()))
+
+    const columnMap = JSON.parse(JSON.stringify(buildColumnMap(headers, targets)))
+    const restored = targetsFromColumnMap(headers, columnMap)
+    expect(pendingFieldsFromTargets(restored)).toEqual(fields)
+    expect(restored.map((target) => target.target)).toEqual(targets.map((target) => target.target))
+    const output = buildImportRecords({ headers, rows, columnMap, valueRules: [], today: '2026-09-12' })
+    expect(output.problems).toEqual([])
+    expect(output.records[0].fields.customFields).toEqual({
+      [fields[0].fieldKey]: '1234.50',
+      [fields[1].fieldKey]: '2026-09-12',
+      [fields[2].fieldKey]: '重点跟进',
+    })
+    restored[2].target = ''
+    expect(pendingFieldsFromTargets(restored)).toEqual(fields.slice(1))
+    expect(buildColumnMap(headers, restored)).not.toHaveProperty('金额_原表')
+  })
+
+  it('已有未保存名称的映射方案仍使用原列名并正常导入', () => {
+    const headers = ['客户名称', '项目名称', '金额']
+    const columnMap = {
+      客户名称: 'customerName', 项目名称: 'projectName', 金额: '__new_custom__:number:excel_amount',
+    }
+    const targets = targetsFromColumnMap(headers, columnMap)
+    expect(pendingFieldsFromTargets(targets)).toEqual([
+      { fieldKey: 'excel_amount', label: '金额', fieldType: 'number' },
+    ])
+    const output = buildImportRecords({
+      headers, rows: [['甲客户', '甲项目', '1,234.50']], columnMap, valueRules: [], today: '2026-09-12',
+    })
+    expect(output.records[0].fields.customFields).toEqual({ excel_amount: '1234.50' })
+  })
 })

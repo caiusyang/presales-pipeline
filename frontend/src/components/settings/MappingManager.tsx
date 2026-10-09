@@ -25,9 +25,12 @@ import {
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { EmptyState } from '@/components/common/EmptyState'
 import { cn } from '@/lib/utils'
+import { parsePendingField } from '@/components/impexp/importTransform'
 
 /** 目标字段 key → 中文名（含 progressText / revenue:YYYY-MM / custom.xxx 伪字段） */
-function targetLabel(target: string, customs: CustomFieldDef[]): string {
+function targetLabel(target: string, customs: CustomFieldDef[], source = ''): string {
+  const pending = parsePendingField(target, source)
+  if (pending) return `新增字段「${pending.label}」`
   if (target.startsWith('revenue:')) return `收入(${target.slice('revenue:'.length)})`
   if (target.startsWith('custom.')) {
     const key = target.slice('custom.'.length)
@@ -134,8 +137,8 @@ export function MappingManager() {
                     >
                       <span className="w-48 truncate text-muted-foreground">{source}</span>
                       <span className="text-muted-foreground">→</span>
-                      <span>{targetLabel(target, customDefs)}</span>
-                      <span className="ml-auto text-xs text-muted-foreground/60">{target}</span>
+                      <span>{targetLabel(target, customDefs, source)}</span>
+                      <span className="ml-auto text-xs text-muted-foreground/60">{parsePendingField(target)?.fieldKey ?? target}</span>
                     </div>
                   ))}
                 </div>

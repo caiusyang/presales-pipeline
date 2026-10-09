@@ -160,7 +160,7 @@ export function pendingFieldsFromTargets(targets: ColumnTarget[]): PendingCustom
   const unique = new Map<string, PendingCustomField>()
   for (const target of targets) {
     if (target.pendingField && target.target.startsWith(NEW_FIELD_PREFIX)) {
-      unique.set(target.pendingField.fieldKey, target.pendingField)
+      unique.set(target.pendingField.fieldKey, { ...target.pendingField, label: target.pendingField.label.trim() })
     }
   }
   return [...unique.values()]
