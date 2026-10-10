@@ -147,7 +147,7 @@ export interface ExactDraftRow {
 }
 
 export type RuleDraft =
-  | { kind: 'exact'; source: string; rows: ExactDraftRow[] }
+  | { kind: 'exact'; source: string; rows: ExactDraftRow[]; matchField?: string; when?: Record<string, string> }
   | { kind: 'split'; source: string; delimiter: string; targetsText: string }
   | { kind: 'default'; field: string; value: string }
 
@@ -163,7 +163,7 @@ export function draftsToRules(drafts: RuleDraft[]): ValueRule[] {
         mapping[src] ??= {}
         mapping[src][r.field] = r.value
       }
-      rules.push({ type: 'exact', source: d.source, mapping })
+      rules.push({ type: 'exact', source: d.source, mapping, ...(d.matchField ? { matchField: d.matchField, when: d.when } : {}) })
     } else if (d.kind === 'split') {
       const targets = d.targetsText
         .split(/[,，]/)
@@ -185,7 +185,7 @@ export function rulesToDrafts(rules: ValueRule[]): RuleDraft[] {
       for (const [src, m] of Object.entries(r.mapping)) {
         for (const [field, value] of Object.entries(m)) rows.push({ src, field, value })
       }
-      return { kind: 'exact', source: r.source, rows }
+      return { kind: 'exact', source: r.source, rows, matchField: r.matchField, when: r.when }
     }
     if (r.type === 'split') {
       return { kind: 'split', source: r.source, delimiter: r.delimiter, targetsText: r.targets.join(',') }
@@ -197,6 +197,7 @@ export function rulesToDrafts(rules: ValueRule[]): RuleDraft[] {
 // ---------- 组装 ----------
 
 export interface TransformProblem {
+  field?: string
   /** Excel 行号（表头占第 1 行，数据自第 2 行起） */
   excelRow: number
   message: string
@@ -277,7 +278,13 @@ export function buildImportRecords({ headers, rows, columnMap, valueRules, today
         continue
       }
       if (target === PROGRESS_TARGET) {
-        if (raw) progress.push(...parseProgressText(raw, today))
+        if (raw) {
+          const entries = parseProgressText(raw, today)
+          if (entries.some((entry) => normalizeDateValue(entry.logDate) !== entry.logDate)) {
+            problems.push({ excelRow, field: `source:${idx}`, message: `进展列「${headers[idx]}」包含无效日期，请修正` })
+          }
+          progress.push(...entries.filter((entry) => normalizeDateValue(entry.logDate) === entry.logDate))
+        }
         continue
       }
       if (target.startsWith(REVENUE_PREFIX)) {
@@ -285,7 +292,7 @@ export function buildImportRecords({ headers, rows, columnMap, valueRules, today
         const month = target.slice(REVENUE_PREFIX.length)
         const num = Number(raw.replace(/[,，\s¥￥]/g, ''))
         if (!Number.isFinite(num)) {
-          problems.push({ excelRow, message: `收入列「${headers[idx]}」数值非法：「${raw}」，该月收入已忽略` })
+          problems.push({ excelRow, field: `source:${idx}`, message: `收入列「${headers[idx]}」数值非法：「${raw}」，请修正后导入` })
           continue
         }
         revenues.push({ month, amount: num })
@@ -328,6 +335,7 @@ export function buildImportRecords({ headers, rows, columnMap, valueRules, today
     }
     for (const rule of valueRules) {
       if (rule.type !== 'exact') continue
+      if (rule.matchField) continue // 标准值对照在基础规则全部应用后执行。
       const raw = cellOf(rule.source)
       if (!raw) continue
       const hit = rule.mapping[raw]
@@ -341,17 +349,20 @@ export function buildImportRecords({ headers, rows, columnMap, valueRules, today
       if (rule.field && rule.value.trim()) setField(rule.field, rule.value.trim(), false)
     }
 
-    // 3) 必填校验（缺失仅标记问题；该行仍提交，由后端判 skipped 并给出原因）
-    for (const f of REQUIRED_PROJECT_FIELDS) {
-      const v = fields[f]
-      if (v == null || String(v).trim() === '') {
-        problems.push({ excelRow, message: `必填字段缺失：${PROJECT_FIELD_LABELS[f] ?? f}` })
-      }
+    const fieldValue = (key: string) => key.startsWith(CUSTOM_PREFIX) ? customFields[key.slice(CUSTOM_PREFIX.length)] : fields[key]
+    for (const rule of valueRules) {
+      if (rule.type !== 'exact' || !rule.matchField) continue
+      if (Object.entries(rule.when ?? {}).some(([key, value]) => String(fieldValue(key) ?? '').trim() !== value)) continue
+      const raw = fieldValue(rule.matchField)
+      const value = Array.isArray(raw) ? raw.join('、') : String(raw ?? '').trim()
+      const hit = rule.mapping[value]
+      if (hit) for (const [key, replacement] of Object.entries(hit)) setField(key, replacement, true)
     }
-    const budgetError = validateSecurityBudget(fields.securityBudget)
-    if (budgetError) problems.push({ excelRow, message: budgetError })
 
-    records.push({ fields: fields as unknown as Partial<ProjectInput>, revenues, progress })
+    // 必填项由后端合并已有项目后校验；预算错误仍给出本地提示。
+    const budgetError = validateSecurityBudget(fields.securityBudget)
+    if (budgetError) problems.push({ excelRow, field: 'securityBudget', message: budgetError })
+    records.push({ sourceRow: excelRow, fields: fields as unknown as Partial<ProjectInput>, revenues, progress })
   })
 
   return { records, problems }

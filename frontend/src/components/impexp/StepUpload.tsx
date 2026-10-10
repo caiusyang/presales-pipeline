@@ -97,7 +97,7 @@ export function StepUpload({ parsed, onParsed, onNext }: Props) {
                 <TableBody>
                   {parsed.rows.slice(0, PREVIEW_ROWS).map((row, r) => (
                     <TableRow key={r}>
-                      <TableCell className="text-center text-xs text-muted-foreground">{r + 2}</TableCell>
+                      <TableCell className="text-center text-xs text-muted-foreground">{r + parsed.dataStartRow}</TableCell>
                       {parsed.headers.map((_, c) => (
                         <TableCell key={c} className="max-w-56 truncate whitespace-nowrap" title={row[c] ?? ''}>
                           {row[c] ?? ''}

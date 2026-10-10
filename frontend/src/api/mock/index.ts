@@ -30,6 +30,7 @@ import { DATE_RE, MONTH_RE } from '@/lib/format'
 import { normalizeProductCode, PRODUCT_CATALOG } from '@/lib/products'
 import { seedDB, type MockDB } from './seed'
 import { validateSecurityBudget } from '@/components/project/project-utils'
+import { mergeImportFields, validateImportRecord, productValues } from '@/components/impexp/importReview'
 
 // ============================================================
 // Mock 实现：在浏览器内模拟后端契约（判重 / dryRun / 修改日志 /
@@ -695,122 +696,67 @@ export const mockApi: ApiClient = {
   },
 
   // ---------------- 导入 ----------------
-  importRecords({ mappingId = null, dryRun, records }) {
+  importRecords({ mappingId = null, dryRun, records, pendingFields = [] }) {
     return delay(() => {
       const details: ImportRecordResult[] = []
-      let added = 0
-      let overwritten = 0
-      let skipped = 0
-      const seenInBatch = new Set<string>()
-
-      const findDup = (fields: Partial<ProjectInput>): Project | undefined => {
-        if (norm(fields.externalId)) {
-          const byExt = db.projects.find((p) => alive(p) && norm(p.externalId) && norm(p.externalId) === norm(fields.externalId))
-          if (byExt) return byExt
-        }
-        return db.projects.find(
-          (p) => alive(p) && norm(p.customerName) === norm(fields.customerName) && norm(p.projectName) === norm(fields.projectName),
-        )
-      }
-
+      const seen = new Set<string>()
+      let added = 0, overwritten = 0, skipped = 0
       records.forEach((rec, i) => {
-        const row = i + 1
-        const base = {
-          row,
-          projectId: null as ID | null,
-          externalId: norm(rec.fields.externalId) || null,
-          customerName: norm(rec.fields.customerName) || null,
-          projectName: norm(rec.fields.projectName) || null,
-        }
-        try {
-          validateProjectFields(rec.fields)
-          const dupKey = norm(rec.fields.externalId)
-            ? `ext:${norm(rec.fields.externalId)}`
-            : `np:${norm(rec.fields.customerName)}|${norm(rec.fields.projectName)}`
-          if (seenInBatch.has(dupKey)) {
-            skipped++
-            details.push({ ...base, status: 'skipped', reason: '同批次重复记录，仅处理第一条' })
-            return
-          }
-          seenInBatch.add(dupKey)
-
-          const existing = findDup(rec.fields)
-          if (!existing) {
-            added++
-            details.push({ ...base, status: 'added' })
-            if (!dryRun) {
-              const p: Project = {
-                externalId: null,
-                projectStatus: '机会点识别',
-                solution: '',
-                subSolution: '',
-                purchasedProducts: [],
-                track: '',
-                industry: '',
-                subIndustry: '',
-                scenario: '',
-                keyRisks: '',
-                keyNeeds: '',
-                customerName: '',
-                projectName: '',
-                customFields: {},
-                ...rec.fields,
-                securityBudget: normalizeSecurityBudgetValue(rec.fields.securityBudget),
-                id: nextId(),
-                revenueTotal: 0,
-                deleted: false,
-                createdAt: now(),
-                updatedAt: now(),
-              } as Project
-              db.projects.push(p)
-              attachSubRows(p.id, rec)
-            }
-          } else {
-            overwritten++
-            details.push({ ...base, status: 'overwritten', projectId: existing.id })
-            if (!dryRun) {
-              // 覆盖语义：未出现的字段保持原值；出现且非空则覆盖；空字符串会清空
-              const merged: ProjectInput = {
-                externalId: existing.externalId,
-                customerName: existing.customerName,
-                projectName: existing.projectName,
-                projectStatus: existing.projectStatus ?? '机会点识别',
-                securityBudget: existing.securityBudget,
-                solution: existing.solution,
-                subSolution: existing.subSolution ?? '',
-                purchasedProducts: [...(existing.purchasedProducts ?? [])],
-                track: existing.track,
-                industry: existing.industry,
-                subIndustry: existing.subIndustry,
-                scenario: existing.scenario,
-                keyRisks: existing.keyRisks,
-                keyNeeds: existing.keyNeeds,
-                customFields: { ...existing.customFields },
-              }
-              for (const [k, v] of Object.entries(rec.fields)) {
-                if (k === 'customFields') continue
-                (merged as Record<string, unknown>)[k] = v
-              }
-              merged.securityBudget = normalizeSecurityBudgetValue(merged.securityBudget)
-              for (const [k, v] of Object.entries(rec.fields.customFields ?? {})) {
-                if (v == null || norm(v) === '') delete merged.customFields[k]
-                else merged.customFields[k] = v
-              }
-              diffAndLog(existing.id, existing, merged, 'import')
-              const idx = db.projects.findIndex((p) => p.id === existing.id)
-              db.projects[idx] = { ...existing, ...merged, updatedAt: now() }
-              attachSubRows(existing.id, rec)
-            }
-          }
-        } catch (e) {
+        const find = (p: Project) => norm(rec.fields.externalId)
+          && norm(p.externalId).toLowerCase() === norm(rec.fields.externalId).toLowerCase()
+        const existing = db.projects.find((p) => alive(p) && find(p))
+          ?? db.projects.find((p) => alive(p) && norm(rec.fields.customerName) && norm(rec.fields.projectName)
+            && norm(p.customerName).toLowerCase() === norm(rec.fields.customerName).toLowerCase()
+            && norm(p.projectName).toLowerCase() === norm(rec.fields.projectName).toLowerCase())
+        const fields = mergeImportFields(rec.fields, existing)
+        const issues = validateImportRecord({ ...rec, fields }, db.dictionaries, db.customFieldDefs, pendingFields)
+        if (db.projects.some((p) => p.deleted && find(p))) issues.push({ field: 'externalId', code: 'conflict', message: '外部编号对应的项目在回收站中，请先恢复后再导入' })
+        if (db.projects.some((p) => p.id !== existing?.id && alive(p)
+          && norm(p.customerName).toLowerCase() === norm(fields.customerName).toLowerCase()
+          && norm(p.projectName).toLowerCase() === norm(fields.projectName).toLowerCase())) issues.push({ field: 'projectName', code: 'conflict', message: '同一客户下已存在同名项目' })
+        const identifiers = [
+          ...(norm(fields.externalId) ? ['ext:' + norm(fields.externalId).toLowerCase()] : []),
+          'name:' + norm(fields.customerName).toLowerCase() + '\\0' + norm(fields.projectName).toLowerCase(),
+          ...(existing ? ['id:' + existing.id] : []),
+        ]
+        if (identifiers.some((id) => seen.has(id))) issues.push({ field: '_record', code: 'duplicate', message: '同批次重复记录，仅处理首次通过校验的记录' })
+        const base = { row: i + 1, sourceRow: rec.sourceRow, projectId: existing?.id ?? null,
+          externalId: fields.externalId, customerName: fields.customerName, projectName: fields.projectName, effectiveFields: fields }
+        if (issues.length) {
           skipped++
-          details.push({ ...base, status: 'skipped', reason: (e as Error).message })
+          details.push({ ...base, status: 'skipped', reason: issues.map((issue) => issue.message).join('；'), issues })
+          return
         }
+        identifiers.forEach((id) => seen.add(id))
+        if (!dryRun) {
+          let sortOrder = Math.max(0, ...db.customFieldDefs.map((def) => def.sortOrder))
+          for (const field of pendingFields) {
+            if (!Object.hasOwn(fields.customFields ?? {}, field.fieldKey) || db.customFieldDefs.some((def) => def.fieldKey === field.fieldKey)) continue
+            db.customFieldDefs.push({ ...field, id: nextId(), required: false, options: [], sortOrder: sortOrder += 10 })
+          }
+          const normalized = { ...fields, securityBudget: normalizeSecurityBudgetValue(fields.securityBudget),
+            purchasedProducts: productValues(fields.purchasedProducts).map((p) => normalizeProductCode(p)!) } as ProjectInput
+          if (existing) {
+            diffAndLog(existing.id, existing, normalized, 'import')
+            Object.assign(existing, normalized, { updatedAt: now() })
+            attachSubRows(existing.id, rec)
+          } else {
+            const project: Project = { ...normalized, externalId: normalized.externalId ?? null,
+              solution: normalized.solution ?? '', subSolution: normalized.subSolution ?? '', track: normalized.track ?? '',
+              industry: normalized.industry ?? '', subIndustry: normalized.subIndustry ?? '', scenario: normalized.scenario ?? '',
+              keyRisks: normalized.keyRisks ?? '', keyNeeds: normalized.keyNeeds ?? '',
+              id: nextId(), revenueTotal: 0, deleted: false, createdAt: now(), updatedAt: now() }
+            db.projects.push(project)
+            base.projectId = project.id
+            attachSubRows(project.id, rec)
+          }
+        }
+        if (existing) overwritten++
+        else added++
+        details.push({ ...base, status: existing ? 'overwritten' : 'added', issues: [] })
       })
-
       if (!dryRun) persist()
-      const result: ImportResult = { dryRun, mappingId, added, overwritten, skipped, details }
-      return result
+      return { dryRun, mappingId, added, overwritten, skipped, details }
     })
   },
 

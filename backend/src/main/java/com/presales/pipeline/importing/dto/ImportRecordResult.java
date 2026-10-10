@@ -7,6 +7,9 @@ public record ImportRecordResult(
         String externalId,
         String customerName,
         String projectName,
-        String reason
+        String reason,
+        Integer sourceRow,
+        java.util.List<ImportIssue> issues,
+        java.util.Map<String, Object> effectiveFields
 ) {
 }

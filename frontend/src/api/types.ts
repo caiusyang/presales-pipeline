@@ -153,13 +153,20 @@ export interface CustomFieldInput {
 // ---------- 导入 ----------
 /** 一条导入记录（前端解析映射后组装） */
 export interface ImportRecordInput {
+  sourceRow?: number
   /** 项目字段（camelCase；customFields 为内嵌 map） */
   fields: Partial<ProjectInput>
   revenues: { month: MonthStr; amount: number }[]
   progress: { logDate: string; content: string }[]
 }
 
+export interface ImportIssue { field: string; code: string; message: string }
+export interface ImportFieldDefinition { fieldKey: string; label: string; fieldType: 'text' | 'number' | 'date' }
+
 export interface ImportRecordResult {
+  sourceRow?: number
+  issues?: ImportIssue[]
+  effectiveFields?: Partial<ProjectInput>
   /** 记录在请求数组中的序号（1 基） */
   row: number
   /** added / overwritten / skipped / failed */
@@ -257,7 +264,7 @@ export interface ApiClient {
   deleteCustomField(id: ID): Promise<void>
 
   // 导入：dryRun=true 预检（不落库），false 正式执行
-  importRecords(input: { mappingId?: ID | null; dryRun: boolean; records: ImportRecordInput[] }): Promise<ImportResult>
+  importRecords(input: { mappingId?: ID | null; dryRun: boolean; records: ImportRecordInput[]; pendingFields?: ImportFieldDefinition[] }): Promise<ImportResult>
 
   // 导出
   getExportFields(scope: ExportScope): Promise<ExportFieldOption[]>

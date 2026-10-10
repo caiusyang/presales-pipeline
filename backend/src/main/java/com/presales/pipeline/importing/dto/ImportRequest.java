@@ -10,6 +10,10 @@ import java.util.List;
 public record ImportRequest(
         @Positive Long mappingId,
         boolean dryRun,
-        @NotEmpty @Size(max = 5000) List<@Valid ImportRecordRequest> records
+        @NotEmpty @Size(max = 5000) List<@Valid ImportRecordRequest> records,
+        @Size(max = 200) List<@Valid ImportFieldDefinition> pendingFields
 ) {
+    public ImportRequest {
+        pendingFields = pendingFields == null ? List.of() : pendingFields;
+    }
 }

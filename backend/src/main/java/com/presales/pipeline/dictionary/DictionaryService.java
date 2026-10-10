@@ -141,22 +141,38 @@ public class DictionaryService {
     public void validateProjectSelections(String solution, String subSolution,
                                           List<String> purchasedProducts, String track,
                                           String industry, String subIndustry) {
-        DictionaryItem solutionItem = validateIfConfigured("solution", solution);
-        DictionaryItem subSolutionItem = validateChildIfConfigured(
-                "sub_solution", subSolution, solutionItem, "细分解决方案不属于所选解决方案");
+        Map<String, String> errors = selectionErrors(solution, subSolution, purchasedProducts, track, industry, subIndustry);
+        if (!errors.isEmpty()) throw BusinessException.badRequest(errors.values().iterator().next());
+    }
+
+    @Transactional(readOnly = true)
+    public Map<String, String> selectionErrors(String solution, String subSolution,
+                                              List<String> purchasedProducts, String track,
+                                              String industry, String subIndustry) {
+        Map<String, String> errors = new LinkedHashMap<>();
+        DictionaryItem solutionItem = checkSelection(errors, "solution", () -> validateIfConfigured("solution", solution));
+        DictionaryItem subSolutionItem = checkSelection(errors, "subSolution", () -> validateChildIfConfigured(
+                "sub_solution", subSolution, solutionItem, "细分解决方案不属于所选解决方案"));
         for (String product : purchasedProducts == null ? List.<String>of() : purchasedProducts) {
-            validateChildIfConfigured("product", product, subSolutionItem,
-                    "产品“" + product + "”不属于所选细分解决方案");
+            checkSelection(errors, "purchasedProducts", () -> validateChildIfConfigured("product", product, subSolutionItem,
+                    "产品“" + product + "”不属于所选细分解决方案"));
         }
-        validateIfConfigured("track", track);
-        DictionaryItem industryItem = validateIfConfigured("industry", industry);
-        DictionaryItem subIndustryItem = validateIfConfigured("sub_industry", subIndustry);
+        checkSelection(errors, "track", () -> validateIfConfigured("track", track));
+        DictionaryItem industryItem = checkSelection(errors, "industry", () -> validateIfConfigured("industry", industry));
+        DictionaryItem subIndustryItem = checkSelection(errors, "subIndustry", () -> validateIfConfigured("sub_industry", subIndustry));
         if (subIndustryItem != null && industryItem != null) {
             if (subIndustryItem.getParent() == null
                     || !Objects.equals(subIndustryItem.getParent().getId(), industryItem.getId())) {
-                throw BusinessException.badRequest("子行业不属于所选行业");
+                errors.put("subIndustry", "子行业不属于所选行业");
             }
         }
+        return errors;
+    }
+
+    private DictionaryItem checkSelection(Map<String, String> errors, String field,
+                                         java.util.function.Supplier<DictionaryItem> check) {
+        try { return check.get(); }
+        catch (BusinessException exception) { errors.put(field, exception.getMessage()); return null; }
     }
 
     private DictionaryItem validateIfConfigured(String type, String value) {

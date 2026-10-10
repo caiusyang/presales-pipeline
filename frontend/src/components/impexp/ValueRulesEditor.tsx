@@ -132,7 +132,11 @@ function ExactCard({
   return (
     <div className="space-y-2">
       <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
-        <Select value={draft.source} onValueChange={(v) => onChange({ ...draft, source: v })} options={headerOptions} placeholder="选择源列" />
+        {draft.matchField ? (
+          <div className="text-sm">标准值对照：{PROJECT_FIELD_LABELS[draft.matchField] ?? draft.matchField}
+            {Object.entries(draft.when ?? {}).map(([key, value]) => <span key={key} className="ml-2 text-xs text-muted-foreground">{PROJECT_FIELD_LABELS[key] ?? key}：{value || '未填写'}</span>)}
+          </div>
+        ) : <Select value={draft.source} onValueChange={(v) => onChange({ ...draft, source: v })} options={headerOptions} placeholder="选择源列" />}
         <Button variant="ghost" size="sm" disabled={colIdx < 0} onClick={() => setShowUniques((s) => !s)}>
           提取该列唯一值
         </Button>

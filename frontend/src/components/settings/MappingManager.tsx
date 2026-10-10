@@ -43,6 +43,7 @@ function targetLabel(target: string, customs: CustomFieldDef[], source = ''): st
 function ruleSummary(rule: ValueRule, customs: CustomFieldDef[]): string {
   switch (rule.type) {
     case 'exact':
+      if (rule.matchField) return `标准值对照：${targetLabel(rule.matchField, customs)}，${Object.keys(rule.mapping).length} 条对照${Object.keys(rule.when ?? {}).length ? '（含上级条件）' : ''}`
       return `精确对照：列「${rule.source}」${Object.keys(rule.mapping).length} 条对照`
     case 'split':
       return `拆分：列「${rule.source}」按 '${rule.delimiter}' → ${rule.targets

@@ -52,7 +52,7 @@ export function ImportResultView({ result, title }: { result: ImportResult; titl
                 const meta = STATUS_META[d.status] ?? { label: d.status, variant: 'outline' as const }
                 return (
                   <TableRow key={d.row}>
-                    <TableCell className="text-xs text-muted-foreground">{d.row + 1}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{d.sourceRow ?? d.row + 1}</TableCell>
                     <TableCell>
                       <Badge variant={meta.variant}>{meta.label}</Badge>
                     </TableCell>

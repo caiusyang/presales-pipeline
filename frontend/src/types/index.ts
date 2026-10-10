@@ -120,7 +120,7 @@ export interface CustomFieldDef {
  * - default：固定默认值。字段为空时补常量
  */
 export type ValueRule =
-  | { type: 'exact'; source: string; mapping: Record<string, Record<string, string>> }
+  | { type: 'exact'; source: string; mapping: Record<string, Record<string, string>>; matchField?: string; when?: Record<string, string> }
   | { type: 'split'; source: string; delimiter: string; targets: string[] }
   | { type: 'default'; field: string; value: string }
 

@@ -5,6 +5,10 @@ import com.presales.pipeline.common.exception.BusinessException;
 import com.presales.pipeline.importing.dto.ImportProgressRequest;
 import com.presales.pipeline.importing.dto.ImportRecordRequest;
 import com.presales.pipeline.importing.dto.ImportRevenueRequest;
+import com.presales.pipeline.importing.dto.ImportFieldDefinition;
+import com.presales.pipeline.importing.dto.ImportIssue;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.presales.pipeline.progress.ProgressService;
 import com.presales.pipeline.project.Project;
 import com.presales.pipeline.project.ProjectRepository;
@@ -27,19 +31,23 @@ public class ImportRecordProcessor {
     private final ProjectService projectService;
     private final RevenueService revenueService;
     private final ProgressService progressService;
+    private final ImportValidator importValidator;
+    private final ObjectMapper mapper;
 
     public ImportRecordProcessor(ProjectRepository projectRepository,
                                  ProjectService projectService,
                                  RevenueService revenueService,
-                                 ProgressService progressService) {
+                                 ProgressService progressService, ImportValidator importValidator, ObjectMapper mapper) {
         this.projectRepository = projectRepository;
         this.projectService = projectService;
         this.revenueService = revenueService;
         this.progressService = progressService;
+        this.importValidator = importValidator;
+        this.mapper = mapper;
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public ProcessedRecord process(ImportRecordRequest record, boolean dryRun) {
+    public ProcessedRecord process(ImportRecordRequest record, boolean dryRun, List<ImportFieldDefinition> pending) {
         FieldBag fields = new FieldBag(record.fields());
         String externalId = fields.string("externalId", "external_id");
         String incomingCustomer = fields.string("customerName", "customer_name");
@@ -53,18 +61,43 @@ public class ImportRecordProcessor {
             }
         }
 
-        ProjectRequest projectRequest = buildProjectRequest(fields, existing);
-        projectService.validate(projectRequest, existing == null ? null : existing.getId());
-        for (ImportRevenueRequest revenue : record.revenues()) {
-            revenueService.validateCell(revenue.month(), revenue.amount());
+        Map<String, Object> effective = existing == null ? new LinkedHashMap<>()
+                : mapper.convertValue(projectService.toResponse(existing, BigDecimal.ZERO), new TypeReference<>() {});
+        Map<String, Object> custom = existing == null ? new LinkedHashMap<>() : new LinkedHashMap<>(existing.getCustomFields());
+        record.fields().forEach((key, value) -> {
+            String canonical = camelKey(key);
+            // 保持 camelCase 优先于 snake_case 的旧契约。
+            if (!key.equals(canonical) && record.fields().containsKey(canonical)) return;
+            if (canonical.equals("customFields") && value instanceof Map<?, ?> values) {
+                values.forEach((k, v) -> { if (v == null || v instanceof String s && s.isBlank()) custom.remove(String.valueOf(k)); else custom.put(String.valueOf(k), v); });
+            } else effective.put(canonical, value);
+        });
+        if (!(effective.containsKey("customFields") && !(effective.get("customFields") instanceof Map))) effective.put("customFields", custom);
+        List<ImportIssue> issues = importValidator.validate(effective, record, pending);
+        if (!issues.isEmpty()) throw new ImportValidationException(issues, effective);
+        effective.put("purchasedProducts", ImportValidator.products(effective.get("purchasedProducts")));
+
+        // 待新增字段已在上方校验；现有项目校验只接收已定义字段。
+        Map<String, Object> known = new LinkedHashMap<>(effective);
+        Map<String, Object> knownCustom = new LinkedHashMap<>(custom);
+        var knownKeys = importValidator.existingKeys();
+        knownCustom.keySet().removeIf(key -> !knownKeys.contains(key));
+        known.put("customFields", knownCustom);
+        try {
+            projectService.validate(buildProjectRequest(new FieldBag(known), null), existing == null ? null : existing.getId());
+        } catch (BusinessException exception) {
+            throw new ImportValidationException(List.of(new ImportIssue("_record", "conflict", exception.getMessage())), effective);
         }
+
+        ProjectRequest projectRequest = buildProjectRequest(new FieldBag(effective), null);
 
         if (dryRun) {
             return new ProcessedRecord(existing == null ? Action.ADDED : Action.OVERWRITTEN,
                     existing == null ? null : existing.getId(), projectRequest.externalId(),
-                    projectRequest.customerName(), projectRequest.projectName());
+                    projectRequest.customerName(), projectRequest.projectName(), effective);
         }
 
+        importValidator.createUsedFields(effective, pending);
         Project project;
         Action action;
         if (existing == null) {
@@ -82,7 +115,13 @@ public class ImportRecordProcessor {
             progressService.addIfAbsent(project, progress.logDate(), progress.content(), ChangeLogService.SOURCE_IMPORT);
         }
         return new ProcessedRecord(action, project.getId(), project.getExternalId(),
-                project.getCustomerName(), project.getProjectName());
+                project.getCustomerName(), project.getProjectName(), effective);
+    }
+
+    private String camelKey(String key) {
+        StringBuilder result = new StringBuilder(); boolean upper = false;
+        for (char c : key.toCharArray()) { if (c == '_') upper = true; else { result.append(upper ? Character.toUpperCase(c) : c); upper = false; } }
+        return result.toString();
     }
 
     private Project findExisting(String externalId, String customerName, String projectName) {
@@ -197,7 +236,8 @@ public class ImportRecordProcessor {
             Long projectId,
             String externalId,
             String customerName,
-            String projectName
+            String projectName,
+            Map<String, Object> effectiveFields
     ) {
     }
 

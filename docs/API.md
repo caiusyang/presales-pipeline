@@ -208,6 +208,14 @@
 
 后端持久化映射配置；三种映射规则的实际转换由前端在本地解析 Excel 时执行。
 
+标准值对照沿用 `exact`，新增可选 `matchField`（匹配转换后的目标字段而非原始列）和 `when`（上级字段条件）。旧的 `source` 规则继续有效。例如：
+
+```json
+{"type":"exact","source":"","matchField":"subSolution","when":{"solution":"云安全"},"mapping":{"原细分名称":{"subSolution":"标准细分名称"}}}
+```
+
+标准值对照不会新增字典选项；本次批量补客户和逐行修正不作为通用映射规则保存。
+
 ### 导出模板
 
 - `GET/POST /api/config/export-templates`
@@ -254,8 +262,10 @@
 {
   "mappingId": null,
   "dryRun": true,
+  "pendingFields": [],
   "records": [
     {
+      "sourceRow": 2,
       "fields": {
         "externalId": "CRM-002",
         "customerName": "示例客户",
@@ -276,7 +286,13 @@
 
 `fields` 同时接受 camelCase 与 snake_case。覆盖项目时，未出现的字段保持原值；出现的空字段会清空。响应状态为 `added`、`overwritten` 或 `skipped`。
 
-前端导入向导会先按字段名称和常用别名匹配基础字段及已有自定义字段。未匹配列会根据非空样本推断为 `text`、`number` 或 `date`，在 dry-run 预检阶段不创建字段，只有用户确认正式导入后才通过自定义字段接口创建并写入。
+前端导入向导会先按字段名称和常用别名匹配基础字段及已有自定义字段。未匹配列会根据非空样本推断为 `text`、`number` 或 `date`，字段名称可在映射时修改。待新增字段通过可选的 `pendingFields: [{fieldKey,label,fieldType}]` 随请求提交；预检只验证、不创建，正式执行时仅创建成功行实际使用的字段，与该行项目写入处于同一事务。旧客户端不传 `pendingFields` 仍可用。
+
+`sourceRow` 是可选的 Excel 原始行号，响应原样返回；`row` 仍是本次请求内从 1 开始的序号。每条详情新增 `issues: [{field,code,message}]` 与 `effectiveFields`（合并已有项目后的字段），原有 `reason` 继续返回。`code` 包括 `required/option/format/length/definition/duplicate/conflict`；同一行的问题尽量一次返回。先按项目标识匹配已有项目，再校验合并结果，未映射客户名称的更新可沿用原客户。
+
+预检页支持批量补客户、逐行修正、按上级上下文进行标准值对照，以及只提交通过校验的行。成功记录不参与当前页面后续提交，失败或未处理记录继续保留，可下载清单。离开或刷新页面会提示进度丢失；不会自动重试结果不明的正式导入。金额、日期、中标必填项与字典关联仍是阻断错误，不会静默删除或自动替换。重复标识只由通过校验（正式模式下成功写入）的记录占用。
+
+无法转换为有效收入或日期的行先显示本地格式问题，不进入服务端批次，避免误占后续有效行的重复标识；修正后再自动参加服务端预检。演示与正式模式均允许未配置子行业字典时保留自由文本，解决方案与产品仍校验父子关联。
 
 产品独立列使用 `product:<产品编码>` 作为映射值，例如 `"WAF列": "product:WAF"`。映射界面显示“已购产品”和具体产品两个选择层级；数据转换时单元格非空即把该产品加入 `purchasedProducts`，空值表示未购。
 

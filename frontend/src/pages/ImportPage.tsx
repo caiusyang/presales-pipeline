@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { useBlocker } from 'react-router-dom'
 import { Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { ID, ImportMapping } from '@/types'
@@ -15,6 +16,7 @@ import {
 import { autoMapColumns, pendingFieldsFromTargets } from '@/components/impexp/autoMapping'
 import type { ColumnTarget, RuleDraft } from '@/components/impexp/importTransform'
 import { useCustomFieldDefs } from '@/hooks/queries'
+import { emptyReview } from '@/components/impexp/importReview'
 
 const STEPS = ['上传解析', '映射调整', '确认执行']
 
@@ -25,9 +27,23 @@ export default function ImportPage() {
   const [ruleDrafts, setRuleDrafts] = useState<RuleDraft[]>([])
   const [mappingId, setMappingId] = useState<ID | null>(null)
   const [mappingName, setMappingName] = useState('')
-  // step 变化时重置 StepConfirm 内部状态（重新预检）
-  const [confirmKey, setConfirmKey] = useState(0)
+  const [session, setSession] = useState(emptyReview)
+  const [uploadVersion, setUploadVersion] = useState(0)
   const customDefsQ = useCustomFieldDefs()
+  const hasPending = parsed != null && parsed.rows.some((row, index) => row.some((cell) => cell.trim()) && !session.completed[parsed.dataStartRow + index])
+  const blocker = useBlocker(hasPending)
+  useEffect(() => {
+    if (blocker.state === 'blocked') {
+      if (window.confirm('还有未导入记录。建议先下载待处理清单；离开将丢失本次修正进度。仍要离开？')) blocker.proceed()
+      else blocker.reset()
+    }
+  }, [blocker])
+  useEffect(() => {
+    if (!hasPending) return
+    const beforeUnload = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = '' }
+    window.addEventListener('beforeunload', beforeUnload)
+    return () => window.removeEventListener('beforeunload', beforeUnload)
+  }, [hasPending])
 
   const columnMap = useMemo(
     () => (parsed ? buildColumnMap(parsed.headers, targets) : {}),
@@ -37,6 +53,7 @@ export default function ImportPage() {
   const pendingFields = useMemo(() => pendingFieldsFromTargets(targets), [targets])
 
   const handleParsed = async (p: ParsedSheet) => {
+    if (hasPending && !window.confirm('重新上传会清除本次修正进度，请确认已下载需要保留的清单。继续？')) return
     let customDefs = customDefsQ.data
     if (!customDefs) {
       const refreshed = await customDefsQ.refetch()
@@ -44,6 +61,8 @@ export default function ImportPage() {
       customDefs = refreshed.data ?? []
     }
     setParsed(p)
+    setSession(emptyReview())
+    setUploadVersion((v) => v + 1)
     setTargets(autoMapColumns(p.headers, p.rows, customDefs))
     setRuleDrafts([])
     setMappingId(null)
@@ -59,16 +78,17 @@ export default function ImportPage() {
   }
 
   const resetAll = () => {
+    if (hasPending && !window.confirm('还有待处理记录，建议先下载清单。确定清除本次导入进度？')) return
     setStep(1)
     setParsed(null)
     setTargets([])
     setRuleDrafts([])
     setMappingId(null)
     setMappingName('')
+    setSession(emptyReview())
   }
 
   const goStep = (s: number) => {
-    if (s === 3) setConfirmKey((k) => k + 1)
     setStep(s)
   }
 
@@ -132,9 +152,17 @@ export default function ImportPage() {
         />
       )}
 
-      {step === 3 && parsed && (
+      {parsed && <div hidden={step !== 3}>
         <StepConfirm
-          key={confirmKey}
+          key={uploadVersion}
+          active={step === 3}
+          session={session}
+          onSessionChange={setSession}
+          mappingName={mappingName}
+          onMappingSaved={(id, name, rules) => {
+            setMappingId(id); setMappingName(name); setRuleDrafts(rulesToDrafts(rules))
+            setSession((current) => ({ ...current, rules: [] }))
+          }}
           parsed={parsed}
           columnMap={columnMap}
           valueRules={valueRules}
@@ -143,7 +171,7 @@ export default function ImportPage() {
           onBack={() => setStep(2)}
           onReset={resetAll}
         />
-      )}
+      </div>}
     </div>
   )
 }

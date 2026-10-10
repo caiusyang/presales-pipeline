@@ -6,6 +6,7 @@ import com.presales.pipeline.importing.dto.ImportRecordRequest;
 import com.presales.pipeline.importing.dto.ImportRecordResult;
 import com.presales.pipeline.importing.dto.ImportRequest;
 import com.presales.pipeline.importing.dto.ImportResponse;
+import com.presales.pipeline.importing.dto.ImportIssue;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -43,21 +44,42 @@ public class ImportService {
             String duplicateReason = checkBatchDuplicate(record.fields(), seenIdentifiers);
             if (duplicateReason != null) {
                 skipped++;
-                details.add(skipped(row, record.fields(), duplicateReason));
+                details.add(skipped(row, record, duplicateReason, List.of(new ImportIssue("_record", "duplicate", duplicateReason)), Map.of()));
                 continue;
             }
             try {
-                ImportRecordProcessor.ProcessedRecord result = processor.process(record, request.dryRun());
+                // 先预检再占用本批标识；同项目不同标识也按实际匹配结果判重。
+                ImportRecordProcessor.ProcessedRecord result = processor.process(record, true, request.pendingFields());
+                Set<String> resolved = new HashSet<>();
+                if (result.projectId() != null) resolved.add("project:" + result.projectId());
+                if (result.externalId() != null) resolved.add("external:" + result.externalId().toLowerCase(Locale.ROOT));
+                resolved.add("name:" + result.customerName().toLowerCase(Locale.ROOT) + "\u0000" + result.projectName().toLowerCase(Locale.ROOT));
+                if (resolved.stream().anyMatch(seenIdentifiers::contains)) {
+                    String reason = "同一导入批次中项目重复，仅处理首次通过校验的记录";
+                    details.add(skipped(row, record, reason, List.of(new ImportIssue("_record", "duplicate", reason)), result.effectiveFields()));
+                    skipped++;
+                    continue;
+                }
+                if (!request.dryRun()) result = processor.process(record, false, request.pendingFields());
+                seenIdentifiers.addAll(resolved);
                 if (result.action() == ImportRecordProcessor.Action.ADDED) {
                     added++;
                 } else {
                     overwritten++;
                 }
                 details.add(new ImportRecordResult(row, result.action().name().toLowerCase(Locale.ROOT),
-                        result.projectId(), result.externalId(), result.customerName(), result.projectName(), null));
+                        result.projectId(), result.externalId(), result.customerName(), result.projectName(), null,
+                        record.sourceRow(), List.of(), result.effectiveFields()));
+            } catch (ImportValidationException exception) {
+                skipped++;
+                details.add(skipped(row, record, exception.getMessage(), exception.getIssues(), exception.getEffectiveFields()));
             } catch (BusinessException exception) {
                 skipped++;
-                details.add(skipped(row, record.fields(), exception.getMessage()));
+                details.add(skipped(row, record, exception.getMessage(), List.of(new ImportIssue("_record", "conflict", exception.getMessage())), Map.of()));
+            } catch (org.springframework.dao.DataIntegrityViolationException exception) {
+                skipped++;
+                String reason = "数据约束冲突，请重新预检确认项目或字段是否已存在";
+                details.add(skipped(row, record, reason, List.of(new ImportIssue("_record", "conflict", reason)), Map.of()));
             }
         }
         return new ImportResponse(request.dryRun(), request.mappingId(), added, overwritten, skipped, details);
@@ -75,17 +97,18 @@ public class ImportService {
             identifiers.add("name:" + customer.toLowerCase(Locale.ROOT) + "\u0000" + project.toLowerCase(Locale.ROOT));
         }
         if (identifiers.stream().anyMatch(seen::contains)) {
-            return "同一导入批次中项目重复，仅处理首次出现的记录";
+            return "同一导入批次中项目重复，仅处理首次通过校验的记录";
         }
-        seen.addAll(identifiers);
         return null;
     }
 
-    private ImportRecordResult skipped(int row, Map<String, Object> fields, String reason) {
+    private ImportRecordResult skipped(int row, ImportRecordRequest record, String reason, List<ImportIssue> issues, Map<String, Object> effective) {
+        Map<String, Object> fields = record.fields();
         return new ImportRecordResult(row, "skipped", null,
                 string(fields, "externalId", "external_id"),
                 string(fields, "customerName", "customer_name"),
-                string(fields, "projectName", "project_name"), reason);
+                string(fields, "projectName", "project_name"), reason, record.sourceRow(), issues,
+                effective.isEmpty() ? fields : effective);
     }
 
     private String string(Map<String, Object> fields, String camelKey, String snakeKey) {

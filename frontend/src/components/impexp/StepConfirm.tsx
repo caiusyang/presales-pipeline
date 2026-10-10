@@ -1,204 +1,199 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import dayjs from 'dayjs'
 import { toast } from 'sonner'
-import { AlertTriangle, ArrowLeft, CheckCircle2, RefreshCw, UploadCloud } from 'lucide-react'
+import * as XLSX from 'xlsx'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Select } from '@/components/ui/select'
 import { Card, CardContent } from '@/components/ui/card'
-import { Skeleton } from '@/components/ui/skeleton'
+import { Table, TableHead, TableHeader, TableRow, TableBody, TableCell } from '@/components/ui/table'
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
-import { useCreateImportFields, useImportRecords } from '@/hooks/queries'
-import type { ID, ValueRule } from '@/types'
-import type { PendingCustomField } from './importTransform'
-import type { ImportResult } from '@/api/types'
+import { useCustomFieldDefs, useCustomers, useDictionaries, useImportRecords, useMappingMutations } from '@/hooks/queries'
+import type { ID, CustomFieldDef, ValueRule } from '@/types'
+import type { ImportIssue, ImportRecordResult, ImportResult } from '@/api/types'
 import type { ParsedSheet } from './excel'
+import type { PendingCustomField } from './importTransform'
 import { buildImportRecords } from './importTransform'
-import { ImportResultView } from './ImportResultView'
+import { applyEdits, fieldContext, fieldLabel, fieldValue, localImportIssues, mappingRule, optionsForField, recordsForPreflight, valueText } from './importReview'
+import type { ReviewSession } from './importReview'
+import { SaveNameDialog } from './SaveNameDialog'
+import { ImportRowEditor } from './ImportRowEditor'
 
 interface Props {
-  parsed: ParsedSheet
-  columnMap: Record<string, string>
-  valueRules: ValueRule[]
-  mappingId: ID | null
-  pendingFields: PendingCustomField[]
-  onBack: () => void
-  onReset: () => void
+  parsed: ParsedSheet; columnMap: Record<string, string>; valueRules: ValueRule[];
+  mappingId: ID | null; mappingName: string; pendingFields: PendingCustomField[];
+  session: ReviewSession; onSessionChange: (session: ReviewSession) => void;
+  onMappingSaved: (id: ID, name: string, rules: ValueRule[]) => void; active: boolean; onBack: () => void; onReset: () => void;
 }
 
-/** 导入第 3 步：组装记录 → dryRun 预检 → 确认执行 → 展示结果 */
-export function StepConfirm({ parsed, columnMap, valueRules, mappingId, pendingFields, onBack, onReset }: Props) {
-  const importMut = useImportRecords()
-  const createFields = useCreateImportFields()
+export function StepConfirm({ parsed, columnMap, valueRules, mappingId, mappingName, pendingFields, session, onSessionChange, onMappingSaved, active, onBack, onReset }: Props) {
+  const importer = useImportRecords(), mappings = useMappingMutations()
+  const dictionaries = useDictionaries(), customs = useCustomFieldDefs(), customers = useCustomers('')
   const today = useMemo(() => dayjs().format('YYYY-MM-DD'), [])
-  const { records, problems } = useMemo(
-    () =>
-      buildImportRecords({
-        headers: parsed.headers,
-        rows: parsed.rows,
-        columnMap,
-        valueRules,
-        today,
-        dataStartRow: parsed.dataStartRow,
-      }),
-    [parsed, columnMap, valueRules, today],
-  )
+  const [preview, setPreview] = useState<{ key: string; result: ImportResult } | null>(null)
+  const [previewError, setPreviewError] = useState(''), [retry, setRetry] = useState(0)
+  const [executing, setExecuting] = useState(false), [uncertain, setUncertain] = useState(false)
+  const [confirmOpen, setConfirmOpen] = useState(false), [saveOpen, setSaveOpen] = useState(false)
+  const [filter, setFilter] = useState('all'), [issueFilter, setIssueFilter] = useState(''), [page, setPage] = useState(0)
+  const [selected, setSelected] = useState<Set<number>>(new Set()), [customer, setCustomer] = useState('')
+  const [editing, setEditing] = useState<number | null>(null)
+  const [choices, setChoices] = useState<Record<string, string>>({})
+  const [lastResults, setLastResults] = useState<ImportRecordResult[]>([])
+  const generation = useRef(0)
+  const transformed = useMemo(() => buildImportRecords({
+    headers: parsed.headers, rows: parsed.rows.map((row, i) => row.map((cell, j) => session.cells[parsed.dataStartRow + i]?.[j] ?? cell)),
+    columnMap, valueRules, today, dataStartRow: parsed.dataStartRow,
+  }), [parsed, columnMap, valueRules, session.cells, today])
+  const records = useMemo(() => transformed.records.map((r) => applyEdits(applyEdits(r, session.bulk[r.sourceRow!]), session.edits[r.sourceRow!])), [transformed, session.bulk, session.edits])
+  const originalByRow = useMemo(() => new Map(buildImportRecords({ headers: parsed.headers, rows: parsed.rows,
+    columnMap, valueRules: valueRules.filter((rule) => rule.type !== 'exact' || !rule.matchField), today, dataStartRow: parsed.dataStartRow,
+  }).records.map((record) => [record.sourceRow!, record])), [parsed, columnMap, valueRules, today])
+  const remaining = useMemo(() => records.filter((r) => !session.completed[r.sourceRow!]), [records, session.completed])
+  const previewRecords = useMemo(() => recordsForPreflight(remaining, transformed.problems), [remaining, transformed.problems])
+  const signature = JSON.stringify({ remaining, problems: transformed.problems, pendingFields, mappingId, retry })
+  const currentPreview = preview?.key === signature ? preview.result : null
+  const defs: CustomFieldDef[] = useMemo(() => {
+    const result = [...(customs.data ?? [])]
+    pendingFields.forEach((f) => { if (!result.some((d) => d.fieldKey === f.fieldKey)) result.push({ ...f, id: 0, required: false, options: [], sortOrder: 0 }) })
+    return result
+  }, [customs.data, pendingFields])
 
-  const [preview, setPreview] = useState<ImportResult | null>(null)
-  const [finalResult, setFinalResult] = useState<ImportResult | null>(null)
-  const [confirmOpen, setConfirmOpen] = useState(false)
-  const ranRef = useRef(false)
-
-  const previewRecords = useMemo(() => {
-    const pendingKeys = new Set(pendingFields.map((field) => field.fieldKey))
-    return records.map((record) => ({
-      ...record,
-      fields: {
-        ...record.fields,
-        customFields: Object.fromEntries(
-          Object.entries(record.fields.customFields ?? {}).filter(([key]) => !pendingKeys.has(key)),
-        ),
-      },
-    }))
-  }, [records, pendingFields])
-
-  const runDry = async () => {
-    setPreview(null)
-    try {
-      const r = await importMut.mutateAsync({ mappingId, dryRun: true, records: previewRecords })
-      setPreview(r)
-    } catch {
-      // 错误提示由 hook 统一 toast
-    }
-  }
-
-  // 进入本步自动预检（ranRef 防止重复触发）
   useEffect(() => {
-    if (ranRef.current) return
-    ranRef.current = true
-    void runDry()
+    if (!active || executing || uncertain || !remaining.length) return
+    const version = ++generation.current
+    let cancelled = false
+    setPreviewError('')
+    const timer = window.setTimeout(async () => {
+      try {
+        const result = previewRecords.length
+          ? await importer.mutateAsync({ mappingId, dryRun: true, records: previewRecords, pendingFields })
+          : { mappingId, dryRun: true, added: 0, overwritten: 0, skipped: 0, details: [] }
+        if (!cancelled && generation.current === version) setPreview({ key: signature, result })
+      } catch (error) { if (!cancelled) setPreviewError((error as Error).message || '预检失败，请重试') }
+    }, 350)
+    return () => { cancelled = true; window.clearTimeout(timer) }
+    // signature 是完整请求的快照；mutation 对象变化不触发重新预检。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [active, signature, executing, uncertain])
 
+  const resultsByRow = new Map(currentPreview?.details.map((result) => [result.sourceRow, result]))
+  const problemsByRow = new Map<number, typeof transformed.problems>()
+  transformed.problems.forEach((problem) => problemsByRow.set(problem.excelRow, [...(problemsByRow.get(problem.excelRow) ?? []), problem]))
+  const rows = records.map((record) => {
+    const sourceRow = record.sourceRow!, done = Boolean(session.completed[sourceRow])
+    const result = session.completed[sourceRow] ?? resultsByRow.get(sourceRow)
+    const issues: ImportIssue[] = [...(result?.issues ?? (result?.reason ? [{ field: '_record', code: 'validation', message: result.reason }] : []))]
+    issues.push(...localImportIssues(record, problemsByRow.get(sourceRow) ?? []))
+    return { sourceRow, record, result, issues: done ? [] : issues, done,
+      ready: !done && Boolean(result && ['added', 'overwritten'].includes(result.status)) && !issues.length }
+  })
+  const ready = rows.filter((r) => r.ready), unresolved = rows.filter((r) => !r.done && !r.ready), done = rows.filter((r) => r.done)
+  const shown = rows.filter((r) => (filter === 'all' || (filter === 'ready' ? r.ready : filter === 'done' ? r.done : !r.done && !r.ready)) && (!issueFilter || r.issues.some((i) => i.field === issueFilter)))
+  const pageCount = Math.max(1, Math.ceil(shown.length / 30)), pageIndex = Math.min(page, pageCount - 1)
+  const pageRows = shown.slice(pageIndex * 30, (pageIndex + 1) * 30)
+  const groups = new Map<string, { field: string; from: string; when: Record<string, string>; rows: number[]; options: string[] }>()
+  rows.filter((r) => !r.done).forEach((r) => {
+    const fields = r.result?.effectiveFields ?? r.record.fields
+    r.issues.filter((i) => i.code === 'option').forEach((issue) => {
+      const from = valueText(fieldValue(fields, issue.field)), when = fieldContext(issue.field, fields)
+      const key = JSON.stringify([issue.field, from, when]), options = optionsForField(issue.field, fields, dictionaries.data ?? [], defs)
+      if (!options) return
+      const group = groups.get(key) ?? { field: issue.field, from, when, rows: [], options }
+      if (!group.rows.includes(r.sourceRow)) group.rows.push(r.sourceRow)
+      groups.set(key, group)
+    })
+  })
+  const editingRow = rows.find((r) => r.sourceRow === editing)
+  const editingBase = editingRow ? applyEdits(
+    { ...editingRow.record, fields: editingRow.result?.effectiveFields ?? editingRow.record.fields },
+    Object.fromEntries(Object.keys(session.edits[editingRow.sourceRow] ?? {}).map((key) => [key,
+      fieldValue(applyEdits(transformed.records.find((record) => record.sourceRow === editingRow.sourceRow)!, session.bulk[editingRow.sourceRow]).fields, key),
+    ])),
+  ) : null
+
+  const download = () => {
+    const headers = ['Excel原行号', ...parsed.headers.map((h) => `原始：${h}`), ...parsed.headers.map((h) => `当前：${h}`), '当前项目字段', '待处理问题']
+    const data = rows.filter((r) => !r.done).map((r) => {
+      const original = parsed.rows[r.sourceRow - parsed.dataStartRow]
+      return [r.sourceRow, ...original, ...original.map((cell, j) => session.cells[r.sourceRow]?.[j] ?? cell), JSON.stringify(r.result?.effectiveFields ?? r.record.fields), r.issues.map((i) => i.message).join('；') || (r.ready ? '已通过，尚未导入' : '等待预检')]
+    })
+    const workbook = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([headers, ...data]), '待处理清单')
+    XLSX.writeFile(workbook, '导入待处理清单.xlsx')
+  }
+  const saveRules = async (name: string) => {
+    const input = { name, columnMap, valueRules: [...valueRules, ...session.rules] }
+    const saved = mappingId == null ? await mappings.create.mutateAsync(input) : await mappings.update.mutateAsync({ id: mappingId, input })
+    onMappingSaved(saved.id, saved.name, input.valueRules); setSaveOpen(false)
+  }
   const runImport = async () => {
+    if (!currentPreview || !ready.length || executing || uncertain) return
+    setExecuting(true); generation.current++
     try {
-      if (pendingFields.length > 0) await createFields.mutateAsync(pendingFields)
-      const r = await importMut.mutateAsync({ mappingId, dryRun: false, records })
-      setFinalResult(r)
-      setConfirmOpen(false)
-      toast.success(`导入完成：新增 ${r.added} / 覆盖 ${r.overwritten} / 跳过 ${r.skipped}`)
+      const result = await importer.mutateAsync({ mappingId, dryRun: false, records: ready.map((r) => r.record), pendingFields })
+      const completed = { ...session.completed }
+      result.details.forEach((r) => { if (['added', 'overwritten'].includes(r.status) && r.sourceRow != null) completed[r.sourceRow] = r })
+      setLastResults(result.details.filter((r) => !['added', 'overwritten'].includes(r.status)))
+      onSessionChange({ ...session, completed }); setSelected(new Set())
+      toast.success(`已导入 ${result.added + result.overwritten} 条，未通过 ${result.skipped} 条继续保留`)
     } catch {
-      // 错误提示由 hook 统一 toast
-    }
+      setUncertain(true); setPreviewError('执行结果未确认。请核对项目数据，再点击重新预检；系统不会自动重试导入。')
+    } finally { setConfirmOpen(false); setPreview(null); setExecuting(false) }
   }
 
-  if (finalResult) {
-    return (
-      <div className="space-y-4">
-        <ImportResultView result={finalResult} title="执行结果" />
-        <div className="flex justify-end">
-          <Button variant="outline" onClick={onReset}>
-            <RefreshCw /> 再导入一批
-          </Button>
-        </div>
-      </div>
-    )
-  }
-
-  return (
-    <div className="space-y-4">
-      <Card>
-        <CardContent className="flex flex-wrap items-center gap-x-6 gap-y-2 pt-4 text-sm sm:pt-5">
-          <span>
-            待导入记录 <b>{records.length}</b> 条
-          </span>
-          <span className="text-muted-foreground">映射列 {Object.keys(columnMap).length} 个</span>
-          <span className="text-muted-foreground">值映射规则 {valueRules.length} 条</span>
-          {pendingFields.length > 0 && (
-            <span className="text-amber-700">确认后新增字段 {pendingFields.length} 个</span>
-          )}
-          {mappingId != null && <span className="text-muted-foreground">将关联当前映射方案</span>}
-        </CardContent>
-      </Card>
-
-      {problems.length > 0 && (
-        <Card className="border-amber-300 bg-amber-50/60">
-          <CardContent className="space-y-1.5 pt-4 sm:pt-5">
-            <div className="flex items-center gap-1.5 text-sm font-medium text-amber-700">
-              <AlertTriangle className="h-4 w-4" /> 前端预检发现 {problems.length} 条问题（对应行可能被跳过或部分忽略）
-            </div>
-            <div className="max-h-40 space-y-1 overflow-auto text-xs text-amber-700">
-              {problems.slice(0, 100).map((p, i) => (
-                <div key={i}>
-                  第 {p.excelRow} 行：{p.message}
-                </div>
-              ))}
-              {problems.length > 100 && <div>… 其余 {problems.length - 100} 条省略</div>}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {pendingFields.length > 0 && (
-        <Card className="border-blue-200 bg-blue-50/60">
-          <CardContent className="pt-4 text-sm text-blue-800 sm:pt-5">
-            当前预检不会创建或校验待新增字段。点击正式导入并再次确认后，系统会先创建
-            {pendingFields.length} 个自定义字段，再写入对应数据。
-            <ul className="mt-2 list-inside list-disc space-y-1">
-              {pendingFields.map((field) => (
-                <li key={field.fieldKey} className="break-words">
-                  {field.label}（{{ text: '文本', number: '数字', date: '日期' }[field.fieldType]}）
-                </li>
-              ))}
-            </ul>
-          </CardContent>
-        </Card>
-      )}
-
-      {preview ? (
-        <ImportResultView result={preview} title="预检结果（dryRun，未写入）" />
-      ) : (
-        <Card>
-          <CardContent className="space-y-3 pt-4 sm:pt-5">
-            <Skeleton className="h-20 w-full" />
-            <Skeleton className="h-48 w-full" />
-            <div className="text-center text-xs text-muted-foreground">正在预检…</div>
-          </CardContent>
-        </Card>
-      )}
-
-      <div className="flex items-center justify-between">
-        <Button variant="outline" onClick={onBack}>
-          <ArrowLeft /> 上一步
-        </Button>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={() => void runDry()} disabled={importMut.isPending}>
-            <RefreshCw /> 重新预检
-          </Button>
-          <Button onClick={() => setConfirmOpen(true)} disabled={!preview || importMut.isPending || createFields.isPending || records.length === 0}>
-            <UploadCloud /> 执行导入
-          </Button>
-        </div>
-      </div>
-
-      <ConfirmDialog
-        open={confirmOpen}
-        onOpenChange={setConfirmOpen}
-        title="确认执行导入"
-        description={
-          preview
-            ? `预检结果：新增 ${preview.added} 条、覆盖 ${preview.overwritten} 条、跳过 ${preview.skipped} 条。${pendingFields.length > 0 ? `同时将新增 ${pendingFields.length} 个自定义字段。` : ''}执行后将正式写入平台，确认继续？`
-            : '确认执行导入？'
-        }
-        confirmText="确认导入"
-        loading={importMut.isPending || createFields.isPending}
-        onConfirm={() => void runImport()}
-      />
-
-      {preview && preview.added + preview.overwritten > 0 && (
-        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
-          覆盖语义：按外部编号或「客户+项目」判重，命中时仅更新本次出现的字段
-        </div>
-      )}
-    </div>
-  )
+  return <div className="space-y-4">
+    <Card><CardContent className="space-y-3 pt-5">
+      <div className="flex flex-wrap gap-6 text-sm"><span>可导入 <b>{ready.length}</b> 条</span><span>待处理 <b>{unresolved.length}</b> 条</span><span>已导入 <b>{done.length}</b> 条</span>
+        {!currentPreview && remaining.length > 0 && <span className="text-muted-foreground">{previewError || '正在重新预检…'}</span>}</div>
+      <p className="text-xs text-muted-foreground">修正后自动重新预检；缺客户可批量补齐，非标准选项需确认对照。单行修正优先于批量修改。待处理进度保留在当前页面，字段和项目只在正式导入时创建。</p>
+      {pendingFields.length > 0 && <p className="text-xs">待新增字段：{pendingFields.map((f) => `${f.label}（${{ text: '文本', number: '数字', date: '日期' }[f.fieldType]}）`).join('、')}</p>}
+      <div className="flex flex-wrap gap-2"><Button variant="outline" disabled={executing} onClick={() => { setUncertain(false); setPreviewError(''); setRetry((n) => n + 1) }}>重新预检</Button>
+        <Button variant="outline" disabled={executing || !remaining.length} onClick={download}>下载未导入清单</Button>
+        <Button variant="outline" disabled={executing || !session.rules.length} onClick={() => setSaveOpen(true)}>保存标准值对照到方案</Button></div>
+      {lastResults.map((r) => <p key={r.sourceRow} className="text-sm text-destructive">第 {r.sourceRow} 行上次执行失败：{r.reason}</p>)}
+    </CardContent></Card>
+    {groups.size > 0 && <Card><CardContent className="space-y-3 pt-5"><h2 className="font-medium">标准值对照</h2>
+      {[...groups].map(([key, g]) => <div key={key} className="flex flex-wrap items-center gap-2 rounded border p-3 text-sm">
+        <span>{fieldLabel(g.field, defs)}：<b>{g.from || '空值'}</b>（{g.rows.length} 行）</span>
+        {Object.entries(g.when).map(([k, v]) => <span className="text-xs text-muted-foreground" key={k}>{fieldLabel(k, defs)}：{v || '未填写'}</span>)}
+        <Select className="min-w-40" aria-label={`${fieldLabel(g.field, defs)} ${g.from} 对应标准值`} value={choices[key] ?? ''} onValueChange={(v) => setChoices({ ...choices, [key]: v })} options={g.options.map((v) => ({ value: v, label: v }))} placeholder="选择标准值" disabled={executing} />
+        <Button size="sm" disabled={executing || !choices[key]} onClick={() => {
+          const bulk = { ...session.bulk }; g.rows.forEach((row) => { bulk[row] = { ...bulk[row], [g.field]: choices[key] } })
+          onSessionChange({ ...session, bulk, rules: [...session.rules, mappingRule(g.field, g.from, choices[key], g.when)] })
+        }}>应用到这些行</Button>
+        {!g.options.length && <span className="text-xs text-amber-700">请先修正上级字段或配置字典关联</span>}
+        {g.field === 'purchasedProducts' && <span className="text-xs text-muted-foreground">需对应多个产品时，请逐行修正</span>}
+      </div>)}
+    </CardContent></Card>}
+    <Card><CardContent className="space-y-3 pt-5">
+      <div className="flex flex-wrap gap-2"><Select className="w-36" value={filter} onValueChange={(v) => { setFilter(v); setPage(0) }} options={[{ value: 'all', label: '全部记录' }, { value: 'pending', label: '待处理' }, { value: 'ready', label: '可导入' }, { value: 'done', label: '已导入' }]} />
+        <Select className="w-44" clearable clearLabel="全部问题" value={issueFilter} onValueChange={(v) => { setIssueFilter(v); setPage(0) }} options={[...new Set(rows.flatMap((r) => r.issues.map((i) => i.field)))].map((k) => ({ value: k, label: k === '_record' ? '记录冲突' : k.startsWith('source:') ? '原始单元格格式' : fieldLabel(k, defs) }))} />
+        <Input className="w-52" aria-label="批量补齐客户名称" placeholder="填写或选择客户名称" list="import-customers" value={customer} onChange={(e) => setCustomer(e.target.value)} maxLength={255} disabled={executing} />
+        <datalist id="import-customers">{customers.data?.map((c) => <option key={c.customerName} value={c.customerName} />)}</datalist>
+        <Button variant="outline" disabled={executing || !customer.trim() || !selected.size} onClick={() => {
+          const bulk = { ...session.bulk }; rows.filter((r) => selected.has(r.sourceRow) && !r.done).forEach((r) => { bulk[r.sourceRow] = { ...bulk[r.sourceRow], customerName: customer.trim() } })
+          onSessionChange({ ...session, bulk }); setSelected(new Set())
+        }}>为所选 {selected.size} 行填写客户</Button></div>
+      <div className="overflow-auto rounded border"><Table><TableHeader><TableRow>
+        <TableHead><input type="checkbox" aria-label="选择当前页未导入记录" disabled={executing} checked={pageRows.some((r) => !r.done) && pageRows.filter((r) => !r.done).every((r) => selected.has(r.sourceRow))} onChange={(e) => {
+          const next = new Set(selected); pageRows.filter((r) => !r.done).forEach((r) => e.target.checked ? next.add(r.sourceRow) : next.delete(r.sourceRow)); setSelected(next)
+        }} /></TableHead><TableHead>Excel 行</TableHead><TableHead>状态</TableHead><TableHead>客户 / 项目</TableHead><TableHead>问题及修正</TableHead><TableHead>操作</TableHead>
+      </TableRow></TableHeader><TableBody>{pageRows.map((r) => <TableRow key={r.sourceRow}>
+        <TableCell><input type="checkbox" aria-label={`选择第 ${r.sourceRow} 行`} disabled={r.done || executing} checked={selected.has(r.sourceRow)} onChange={(e) => { const next = new Set(selected); if (e.target.checked) next.add(r.sourceRow); else next.delete(r.sourceRow); setSelected(next) }} /></TableCell>
+        <TableCell>{r.sourceRow}</TableCell><TableCell>{r.done ? '已导入' : r.ready ? (r.result?.status === 'added' ? '可新增' : '可覆盖') : currentPreview ? '待处理' : '待预检'}</TableCell>
+        <TableCell className="min-w-40"><div>{r.result?.customerName || r.record.fields.customerName || '客户待补齐'}</div><div className="text-xs text-muted-foreground">{r.result?.projectName || r.record.fields.projectName || '项目待补齐'}</div>
+          {!r.record.fields.customerName && r.result?.customerName && <div className="text-xs text-sky-700">沿用已有项目客户</div>}</TableCell>
+        <TableCell className="min-w-56 max-w-lg whitespace-normal"><ul className="space-y-1 text-xs text-destructive">{r.issues.map((issue, i) => <li key={i}>{issue.message}</li>)}</ul>
+          {Object.entries({ ...session.bulk[r.sourceRow], ...session.edits[r.sourceRow] }).map(([key, value]) => <div key={key} className="text-xs text-sky-700">{fieldLabel(key, defs)}：{valueText(fieldValue(originalByRow.get(r.sourceRow)?.fields ?? {}, key)) || '空'} → {valueText(value) || '空'}</div>)}</TableCell>
+        <TableCell><Button size="sm" variant="outline" disabled={r.done || executing} onClick={() => setEditing(r.sourceRow)}>逐行修正</Button></TableCell>
+      </TableRow>)}</TableBody></Table></div>
+      <div className="flex items-center justify-end gap-3 text-sm"><span>第 {pageIndex + 1} / {pageCount} 页，共 {shown.length} 行</span><Button variant="outline" size="sm" disabled={pageIndex === 0} onClick={() => setPage(pageIndex - 1)}>上一页</Button><Button variant="outline" size="sm" disabled={pageIndex >= pageCount - 1} onClick={() => setPage(pageIndex + 1)}>下一页</Button></div>
+    </CardContent></Card>
+    <div className="flex justify-between"><Button variant="outline" disabled={executing} onClick={onBack}>返回映射调整</Button><div className="flex gap-2"><Button variant="outline" disabled={executing} onClick={onReset}>重新上传</Button><Button disabled={executing || uncertain || !currentPreview || !ready.length || Boolean(previewError)} onClick={() => setConfirmOpen(true)}>导入已通过的 {ready.length} 条</Button></div></div>
+    {editingRow && editingBase && <ImportRowEditor key={editingRow.sourceRow} record={editingBase} edits={session.edits[editingRow.sourceRow] ?? {}} cells={session.cells[editingRow.sourceRow] ?? {}}
+      headers={parsed.headers} original={parsed.rows[editingRow.sourceRow - parsed.dataStartRow]} defs={defs} dictionaries={dictionaries.data ?? []} onClose={() => setEditing(null)}
+      onSave={(edits, cells) => { onSessionChange({ ...session, edits: { ...session.edits, [editingRow.sourceRow]: edits }, cells: { ...session.cells, [editingRow.sourceRow]: cells } }); setEditing(null) }} />}
+    <ConfirmDialog open={confirmOpen} onOpenChange={setConfirmOpen} title="确认分批导入" description={`本次新增 ${ready.filter((r) => r.result?.status === 'added').length} 条、覆盖 ${ready.filter((r) => r.result?.status === 'overwritten').length} 条；另有 ${unresolved.length} 条待处理，将保留在当前页面。仅本次需要的新增字段会被创建。`} confirmText="确认导入已通过记录" loading={executing} onConfirm={() => void runImport()} />
+    <SaveNameDialog open={saveOpen} onOpenChange={setSaveOpen} title="保存标准值对照" description="保存字段映射和值对照；本次补客户和单行修改不会保存为通用规则。" nameLabel="方案名称" defaultName={mappingName} loading={mappings.create.isPending || mappings.update.isPending} onSubmit={(name) => void saveRules(name).catch(() => {})} />
+  </div>
 }
