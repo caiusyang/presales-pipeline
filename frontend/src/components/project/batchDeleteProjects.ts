@@ -5,7 +5,7 @@ export interface BatchDeleteProjectsResult {
   failures: { id: ID; message: string }[]
 }
 
-/** 复用单项目软删除接口，限制并发，并保留每个项目的真实执行结果。 */
+/** 复用传入的单项目删除接口，限制并发，并保留每个项目的真实执行结果。 */
 export async function batchDeleteProjects(
   ids: ID[],
   deleteProject: (id: ID) => Promise<void>,

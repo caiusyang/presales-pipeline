@@ -67,6 +67,7 @@ export function useProjectMutations() {
     qc.invalidateQueries({ queryKey: ['project-detail'] })
     qc.invalidateQueries({ queryKey: ['revenue-matrix'] })
     qc.invalidateQueries({ queryKey: ['stats'] })
+    qc.invalidateQueries({ queryKey: ['export-fields'] })
   }
   const create = useMutation({
     mutationFn: (input: ProjectInput) => api.createProject(input),
@@ -95,12 +96,26 @@ export function useProjectMutations() {
     onSettled: invalidate,
     onError: onErr,
   })
+  const purge = useMutation({
+    mutationFn: (id: ID) => api.permanentlyDeleteProject(id),
+    onSuccess: () => { invalidate(); toast.success('项目及关联数据已永久删除') },
+    onError: onErr,
+  })
+  const purgeMany = useMutation({
+    mutationFn: (ids: ID[]) => batchDeleteProjects(ids, (id) => api.permanentlyDeleteProject(id)),
+    onSuccess: (result) => {
+      if (result.failures.length) toast.warning(`已永久删除 ${result.deletedIds.length} 个项目，${result.failures.length} 个未完成，请查看失败原因`)
+      else toast.success(`已永久删除 ${result.deletedIds.length} 个项目及其关联数据`)
+    },
+    onSettled: invalidate,
+    onError: onErr,
+  })
   const restore = useMutation({
     mutationFn: (id: ID) => api.restoreProject(id),
     onSuccess: () => { invalidate(); toast.success('已恢复') },
     onError: onErr,
   })
-  return { create, update, remove, removeMany, restore }
+  return { create, update, remove, removeMany, purge, purgeMany, restore }
 }
 
 // ---------------- 进展 ----------------

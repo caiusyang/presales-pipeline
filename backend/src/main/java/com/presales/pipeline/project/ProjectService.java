@@ -14,6 +14,7 @@ import com.presales.pipeline.progress.ProgressLogRepository;
 import com.presales.pipeline.progress.dto.ProgressResponse;
 import com.presales.pipeline.product.ProductCatalog;
 import com.presales.pipeline.product.ProjectProductService;
+import com.presales.pipeline.product.ProjectProductRepository;
 import com.presales.pipeline.project.dto.ProjectDetailResponse;
 import com.presales.pipeline.project.dto.ProjectRequest;
 import com.presales.pipeline.project.dto.ProjectResponse;
@@ -61,6 +62,7 @@ public class ProjectService {
     private final ConfigService configService;
     private final DictionaryService dictionaryService;
     private final ProjectProductService projectProductService;
+    private final ProjectProductRepository projectProductRepository;
 
     public ProjectService(ProjectRepository projectRepository,
                           RevenueRepository revenueRepository,
@@ -69,7 +71,8 @@ public class ProjectService {
                           ChangeLogService changeLogService,
                           ConfigService configService,
                           DictionaryService dictionaryService,
-                          ProjectProductService projectProductService) {
+                          ProjectProductService projectProductService,
+                          ProjectProductRepository projectProductRepository) {
         this.projectRepository = projectRepository;
         this.revenueRepository = revenueRepository;
         this.progressRepository = progressRepository;
@@ -78,6 +81,7 @@ public class ProjectService {
         this.configService = configService;
         this.dictionaryService = dictionaryService;
         this.projectProductService = projectProductService;
+        this.projectProductRepository = projectProductRepository;
     }
 
     @Transactional(readOnly = true)
@@ -153,8 +157,24 @@ public class ProjectService {
     }
 
     @Transactional
+    public void permanentlyDelete(Long id) {
+        Project project = projectRepository.findByIdForUpdate(id)
+                .orElseThrow(() -> BusinessException.notFound("回收站中未找到该项目"));
+        if (!project.isDeleted()) {
+            throw BusinessException.conflict("仅允许永久删除回收站中的项目，请先移入回收站");
+        }
+        // 不按 deleted 过滤：已软删除的子记录也必须物理清理，且先于主表删除。
+        revenueRepository.deleteAllByProjectId(id);
+        progressRepository.deleteAllByProjectId(id);
+        projectProductRepository.deleteAllByProjectId(id);
+        changeLogRepository.deleteAllByProjectId(id);
+        projectRepository.delete(project);
+        projectRepository.flush();
+    }
+
+    @Transactional
     public ProjectResponse restore(Long id) {
-        Project project = projectRepository.findById(id)
+        Project project = projectRepository.findByIdForUpdate(id)
                 .orElseThrow(() -> BusinessException.notFound("项目不存在"));
         if (!project.isDeleted()) {
             return toResponse(project, totalRevenue(project.getId()));

@@ -296,6 +296,20 @@ export const mockApi: ApiClient = {
     })
   },
 
+  permanentlyDeleteProject(id) {
+    return delay(() => {
+      const project = db.projects.find((item) => item.id === id)
+      if (!project) throw new Error('回收站中未找到该项目')
+      if (!project.deleted) throw new Error('仅允许永久删除回收站中的项目，请先移入回收站')
+      db.revenues = db.revenues.filter((item) => item.projectId !== id)
+      db.progressLogs = db.progressLogs.filter((item) => item.projectId !== id)
+      // 演示模式的产品记录由项目 purchasedProducts 生成，随主表一起移除。
+      db.changeLogs = db.changeLogs.filter((item) => item.projectId !== id)
+      db.projects = db.projects.filter((item) => item.id !== id)
+      persist()
+    })
+  },
+
   restoreProject(id) {
     return delay(() => {
       const p = db.projects.find((p) => p.id === id && p.deleted)

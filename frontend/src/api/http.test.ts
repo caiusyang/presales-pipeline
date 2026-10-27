@@ -12,6 +12,19 @@ afterEach(() => {
 })
 
 describe('HTTP API contract', () => {
+  it('uses a distinct CSRF-protected endpoint for permanent deletion without falling back to soft deletion', async () => {
+    const fetchMock = vi.fn(async (path: string) => {
+      if (path === '/api/auth/csrf') return jsonResponse({ code: 0, data: { headerName: 'X-CSRF-TOKEN', token: 'csrf-permanent' } })
+      return jsonResponse({ code: 40900, message: '仅允许永久删除回收站中的项目，请先移入回收站' }, 409)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const { httpApi } = await import('./http')
+    await expect(httpApi.permanentlyDeleteProject(9)).rejects.toThrow('请先移入回收站')
+    const requests = fetchMock.mock.calls as unknown as [string, RequestInit][]
+    expect(requests.map(([path]) => path)).toEqual(['/api/auth/csrf', '/api/projects/9/permanent'])
+    expect(requests[1][1].method).toBe('DELETE')
+    expect(new Headers(requests[1][1].headers).get('X-CSRF-TOKEN')).toBe('csrf-permanent')
+  })
   it('bulk deletion reuses authenticated single-project requests and reports individual failures', async () => {
     const fetchMock = vi.fn(async (path: string) => {
       if (path === '/api/auth/csrf') return jsonResponse({ code: 0, data: { headerName: 'X-XSRF-TOKEN', token: 'csrf-bulk' } })

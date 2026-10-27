@@ -2,12 +2,17 @@ package com.presales.pipeline.revenue;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 import java.util.Optional;
 
 public interface RevenueRepository extends JpaRepository<Revenue, Long> {
+    @Modifying
+    @Query("delete from Revenue r where r.project.id = :projectId")
+    void deleteAllByProjectId(@Param("projectId") Long projectId);
+
     Optional<Revenue> findByProjectIdAndMonth(Long projectId, String month);
     Optional<Revenue> findByIdAndDeletedFalse(Long id);
     List<Revenue> findAllByProjectIdAndDeletedFalseOrderByMonthAsc(Long projectId);

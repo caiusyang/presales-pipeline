@@ -221,6 +221,8 @@ export interface ApiClient {
   updateProject(id: ID, input: ProjectInput): Promise<Project>
   /** 软删除 */
   deleteProject(id: ID): Promise<void>
+  /** 仅回收站项目可永久删除，同时删除关联记录 */
+  permanentlyDeleteProject(id: ID): Promise<void>
   /** 回收站恢复 */
   restoreProject(id: ID): Promise<void>
 

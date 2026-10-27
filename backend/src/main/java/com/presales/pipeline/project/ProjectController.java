@@ -64,6 +64,12 @@ public class ProjectController {
         return ApiResponse.success("项目已移入回收站", null);
     }
 
+    @DeleteMapping("/{id}/permanent")
+    public ApiResponse<Void> permanentlyDelete(@PathVariable Long id) {
+        service.permanentlyDelete(id);
+        return ApiResponse.success("项目及关联数据已永久删除", null);
+    }
+
     @PostMapping("/{id}/restore")
     public ApiResponse<ProjectResponse> restore(@PathVariable Long id) {
         return ApiResponse.success("项目已恢复", service.restore(id));

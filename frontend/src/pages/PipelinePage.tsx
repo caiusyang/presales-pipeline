@@ -84,12 +84,13 @@ export default function PipelinePage() {
   const industryQ = useDictionaries('industry')
   const trackQ = useDictionaries('track')
   const customDefsQ = useCustomFieldDefs()
-  const { remove, removeMany } = useProjectMutations()
+  const { remove, removeMany, purge, purgeMany } = useProjectMutations()
 
   const total = projectsQ.data?.total ?? 0
   const items = projectsQ.data?.items ?? []
   const totalPages = Math.max(1, Math.ceil(total / size))
-  const deleting = remove.isPending || removeMany.isPending
+  const deleting = remove.isPending || removeMany.isPending || purge.isPending || purgeMany.isPending
+  const batchPermanent = batchTargets[0]?.deleted === true
   const selectedIds = useMemo(() => new Set(selectedProjects.keys()), [selectedProjects])
 
   useEffect(() => {
@@ -107,7 +108,8 @@ export default function PipelinePage() {
   const deleteSelected = async () => {
     if (!batchTargets.length || deleting) return
     const targets = [...batchTargets]
-    const result = await removeMany.mutateAsync(targets.map((project) => project.id))
+    const mutation = targets[0].deleted ? purgeMany : removeMany
+    const result = await mutation.mutateAsync(targets.map((project) => project.id))
     setSelectedProjects((current) => {
       const next = new Map(current)
       result.deletedIds.forEach((id) => next.delete(id))
@@ -248,19 +250,19 @@ export default function PipelinePage() {
 
       {recycleBin && (
         <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
-          当前查看回收站：此处为已软删除的项目，可恢复回正常列表。
+          当前查看回收站：可恢复项目，也可永久删除。永久删除会清除项目及其收入明细、进展日志、已购产品记录和修改日志，无法在回收站恢复。
         </div>
       )}
 
-      {!recycleBin && <div className="flex flex-wrap items-center gap-3 text-sm">
+      <div className="flex flex-wrap items-center gap-3 text-sm">
         <span aria-live="polite">已选 {selectedProjects.size} 个项目</span>
         <Button variant="destructive" disabled={!selectedProjects.size || deleting} onClick={() => setBatchTargets([...selectedProjects.values()])}>
-          <Trash2 className="h-4 w-4" />{removeMany.isPending ? '删除中…' : `批量删除 ${selectedProjects.size} 个项目`}
+          <Trash2 className="h-4 w-4" />{removeMany.isPending || purgeMany.isPending ? '删除中…' : `${recycleBin ? '批量永久删除' : '批量删除'} ${selectedProjects.size} 个项目`}
         </Button>
         {selectedProjects.size > 0 && <Button variant="ghost" disabled={deleting} onClick={() => setSelectedProjects(new Map())}>清空选择</Button>}
-        <span className="text-xs text-muted-foreground">支持跨页勾选，表头全选当前页；删除后可在回收站恢复。</span>
-      </div>}
-      {!recycleBin && deleteFailures.length > 0 && <div role="alert" className="space-y-1 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm">
+        <span className="text-xs text-muted-foreground">支持跨页勾选，表头全选当前页；{recycleBin ? '永久删除后不可恢复。' : '删除后可在回收站恢复。'}</span>
+      </div>
+      {deleteFailures.length > 0 && <div role="alert" className="space-y-1 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm">
         <p>以下项目未完成删除，请核对后重试：</p>
         {deleteFailures.map(({ project, message }) => <p key={project.id} className="text-xs text-destructive">{project.customerName} · {project.projectName}：{message}</p>)}
       </div>}
@@ -339,29 +341,36 @@ export default function PipelinePage() {
       <ConfirmDialog
         open={deleteTarget != null}
         onOpenChange={(o) => !o && setDeleteTarget(null)}
-        title="删除项目"
+        title={deleteTarget?.deleted ? '永久删除项目' : '删除项目'}
         description={
           deleteTarget
-            ? `确定删除「${deleteTarget.customerName} · ${deleteTarget.projectName}」吗？删除为软删除，可在回收站中恢复。`
+            ? deleteTarget.deleted
+              ? `确定永久删除「${deleteTarget.customerName} · ${deleteTarget.projectName}」吗？项目及其收入明细、进展日志、已购产品记录和修改日志会彻底删除，此操作不可恢复。`
+              : `确定删除「${deleteTarget.customerName} · ${deleteTarget.projectName}」吗？删除为软删除，可在回收站中恢复。`
             : undefined
         }
-        confirmText="删除"
+        confirmText={deleteTarget?.deleted ? '永久删除' : '删除'}
         destructive
-        loading={remove.isPending}
+        loading={remove.isPending || purge.isPending}
         onConfirm={() => {
           const target = deleteTarget
-          if (target) remove.mutate(target.id, { onSuccess: () => selectProjects([target], false) })
-          setDeleteTarget(null)
+          if (!target || deleting) return
+          const mutation = target.deleted ? purge : remove
+          mutation.mutate(target.id, { onSuccess: () => {
+            selectProjects([target], false)
+            setDeleteFailures((current) => current.filter((failure) => failure.project.id !== target.id))
+            setDeleteTarget(null)
+          } })
         }}
       />
       <ConfirmDialog
         open={batchTargets.length > 0}
         onOpenChange={(open) => !open && setBatchTargets([])}
-        title="批量删除项目"
-        description={`确定将所选 ${batchTargets.length} 个项目移入回收站吗？${batchTargets.slice(0, 5).map((project) => `「${project.customerName} · ${project.projectName}」`).join('、')}${batchTargets.length > 5 ? '等项目' : ''}。删除后可在回收站恢复，收入明细和进展记录会保留。`}
-        confirmText={`确认删除 ${batchTargets.length} 个项目`}
+        title={batchPermanent ? '批量永久删除项目' : '批量删除项目'}
+        description={`确定${batchPermanent ? '永久删除所选' : '将所选'} ${batchTargets.length} 个项目${batchPermanent ? '吗' : '移入回收站吗'}？${batchTargets.slice(0, 5).map((project) => `「${project.customerName} · ${project.projectName}」`).join('、')}${batchTargets.length > 5 ? '等项目' : ''}。${batchPermanent ? '项目及其收入明细、进展日志、已购产品记录和修改日志会彻底删除，此操作不可恢复。' : '删除后可在回收站恢复，收入明细和进展记录会保留。'}`}
+        confirmText={`确认${batchPermanent ? '永久删除' : '删除'} ${batchTargets.length} 个项目`}
         destructive
-        loading={removeMany.isPending}
+        loading={removeMany.isPending || purgeMany.isPending}
         onConfirm={() => { void deleteSelected().catch(() => {}) }}
       />
     </div>

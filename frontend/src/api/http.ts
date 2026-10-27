@@ -166,6 +166,7 @@ export const httpApi: ApiClient = {
   createProject: (input) => req('/projects', { method: 'POST', body: JSON.stringify(input) }),
   updateProject: (id, input) => req(`/projects/${id}`, { method: 'PUT', body: JSON.stringify(input) }),
   deleteProject: (id) => req(`/projects/${id}`, { method: 'DELETE' }),
+  permanentlyDeleteProject: (id) => req(`/projects/${id}/permanent`, { method: 'DELETE' }),
   restoreProject: (id) => req(`/projects/${id}/restore`, { method: 'POST' }),
 
   // ---------------- 客户分析 ----------------

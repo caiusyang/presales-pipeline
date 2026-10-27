@@ -45,7 +45,7 @@ interface Editing {
   value: string
 }
 
-/** 管道表格：双击行内编辑、列头排序、操作列（详情/删除；回收站为恢复+删除时间） */
+/** 管道表格：双击行内编辑、勾选及排序；回收站支持恢复和永久删除。 */
 export function ProjectTable({
   projects,
   columns,
@@ -102,7 +102,7 @@ export function ProjectTable({
   }
 
   const handleRowClick = (p: Project, e: MouseEvent) => {
-    if (editing || e.detail !== 1) return
+    if (recycleBin || editing || e.detail !== 1) return
     if ((e.target as HTMLElement).closest('button,select,input,textarea,a')) return
     if (clickTimer.current) window.clearTimeout(clickTimer.current)
     clickTimer.current = window.setTimeout(() => onOpenDetail(p.id), 250)
@@ -185,22 +185,22 @@ export function ProjectTable({
     <Table>
       <TableHeader>
         <TableRow>
-          {!recycleBin && <TableHead className="w-10">
+          <TableHead className="w-10">
             <Checkbox aria-label="选择当前页项目" disabled={deleting} checked={projects.every((project) => selectedIds.has(project.id))
               ? true : projects.some((project) => selectedIds.has(project.id)) ? 'indeterminate' : false}
               onCheckedChange={(checked) => onSelectPage(checked === true)} />
-          </TableHead>}
+          </TableHead>
           {columns.map(renderHead)}
           <TableHead className="w-48 text-right">操作</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
         {projects.map((p) => (
-          <TableRow key={p.id} className="cursor-pointer" data-state={!recycleBin && selectedIds.has(p.id) ? 'selected' : undefined} onClick={(e) => handleRowClick(p, e)}>
-            {!recycleBin && <TableCell onClick={(event) => event.stopPropagation()}>
+          <TableRow key={p.id} className={recycleBin ? undefined : 'cursor-pointer'} data-state={selectedIds.has(p.id) ? 'selected' : undefined} onClick={(e) => handleRowClick(p, e)}>
+            <TableCell onClick={(event) => event.stopPropagation()}>
               <Checkbox aria-label={`选择项目 ${p.customerName} · ${p.projectName}`} disabled={deleting} checked={selectedIds.has(p.id)}
                 onCheckedChange={(checked) => onSelectProject(p, checked === true)} />
-            </TableCell>}
+            </TableCell>
             {columns.map((col) => {
               const isEditing = editing?.id === p.id && editing.key === col.key
               const editable = isEditable(col.key)
@@ -226,10 +226,14 @@ export function ProjectTable({
             <TableCell className="text-right">
               {recycleBin ? (
                 <div className="flex flex-col items-end gap-1">
-                  <Button variant="outline" size="xs" onClick={() => restore.mutate(p.id)}>
-                    <RotateCcw className="h-3.5 w-3.5" />
-                    恢复
-                  </Button>
+                  <div className="flex gap-1">
+                    <Button variant="outline" size="xs" disabled={deleting || restore.isPending} onClick={() => restore.mutate(p.id, { onSuccess: () => onSelectProject(p, false) })}>
+                      <RotateCcw className="h-3.5 w-3.5" />恢复
+                    </Button>
+                    <Button variant="destructive" size="xs" disabled={deleting || restore.isPending} onClick={() => onRequestDelete(p)}>
+                      <Trash2 className="h-3.5 w-3.5" />永久删除
+                    </Button>
+                  </div>
                   <span className="text-xs text-muted-foreground">
                     删除于 {dayjs(p.updatedAt).format('YYYY-MM-DD HH:mm')}
                   </span>
