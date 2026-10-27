@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { DictNode } from '@/types'
-import { applyEdits, localImportIssues, mappingRule, mergeImportFields, optionsForField, recordsForPreflight, validateImportRecord } from './importReview'
+import { applyEdits, emptyReview, excludeImportRows, isPendingImportRow, localImportIssues, mappingRule, mergeImportFields, optionsForField, pendingImportRecords, recordsForPreflight, validateImportRecord } from './importReview'
 import { buildImportRecords, draftsToRules, rulesToDrafts } from './importTransform'
 
 afterEach(() => { vi.unstubAllGlobals(); vi.resetModules() })
@@ -15,6 +15,47 @@ const dictionaries: DictNode[] = [
 ]
 
 describe('导入问题修正', () => {
+  it('成功和移除的行不再参与列表及导入，恢复仅找回未导入行并保留修正', () => {
+    const records = [7, 9, 12].map((sourceRow) => ({ ...record, sourceRow }))
+    const session = emptyReview()
+    session.completed[7] = { row: 1, sourceRow: 7, status: 'added' }
+    session.edits[9] = { customerName: '修正后的客户' }
+    const excluded = excludeImportRows(session, [7, 9])
+    expect(pendingImportRecords(records, excluded).map((row) => row.sourceRow)).toEqual([12])
+    expect(isPendingImportRow(excluded, 7)).toBe(false)
+    expect(isPendingImportRow(excluded, 9)).toBe(false)
+    expect(excluded.excluded).toEqual({ 9: true })
+    expect(session.excluded).toEqual({})
+    const restored = { ...excluded, excluded: {} }
+    expect(pendingImportRecords(records, restored).map((row) => row.sourceRow)).toEqual([9, 12])
+    expect(restored.edits[9].customerName).toBe('修正后的客户')
+  })
+  it('批量移除不会覆盖已有项目或为移除行创建字段，未处理行仍可继续导入', async () => {
+    const storage = new Map<string, string>()
+    vi.stubGlobal('localStorage', { getItem: (key: string) => storage.get(key) ?? null, setItem: (key: string, value: string) => storage.set(key, value) })
+    const { mockApi } = await import('@/api/mock')
+    const original = { ...record, sourceRow: 2, fields: { externalId: 'EXCLUDE-TEST', customerName: '移除测试客户', projectName: '保留已有项目' } }
+    const first = await mockApi.importRecords({ dryRun: false, records: [original] })
+    const projectId = first.details[0].projectId!
+    const before = await mockApi.getProjectDetail(projectId)
+    const session = emptyReview()
+    session.completed[2] = first.details[0]
+    const pendingFields = [{ fieldKey: 'excluded_only', label: '不应创建的字段', fieldType: 'text' as const }]
+    const excludedUpdate = { ...record, sourceRow: 3, fields: { externalId: 'EXCLUDE-TEST', projectName: '不应覆盖的名称', customFields: { excluded_only: '不导入' } } }
+    const valid = { ...record, sourceRow: 4, fields: { customerName: '继续导入客户', projectName: '继续导入项目' } }
+    const invalid = { ...record, sourceRow: 5, fields: { projectName: '仍待补齐客户' } }
+    const excluded = excludeImportRows(session, [3])
+    const remaining = pendingImportRecords([original, excludedUpdate, valid, invalid], excluded)
+    expect(remaining.map((row) => row.sourceRow)).toEqual([4, 5])
+    const preview = await mockApi.importRecords({ dryRun: true, records: remaining, pendingFields })
+    expect(preview.added).toBe(1); expect(preview.skipped).toBe(1)
+    const acceptedRows = new Set(preview.details.filter((row) => row.status === 'added').map((row) => row.sourceRow))
+    const executed = await mockApi.importRecords({ dryRun: false, records: remaining.filter((row) => acceptedRows.has(row.sourceRow)), pendingFields })
+    executed.details.forEach((row) => { excluded.completed[row.sourceRow!] = row })
+    expect(pendingImportRecords([original, excludedUpdate, valid, invalid], excluded).map((row) => row.sourceRow)).toEqual([5])
+    expect(await mockApi.getProjectDetail(projectId)).toEqual(before)
+    expect((await mockApi.listCustomFields()).some((field) => field.fieldKey === 'excluded_only')).toBe(false)
+  })
   it('未配置子行业字典时与正式后端一样允许自由文本', () => {
     expect(optionsForField('subIndustry', { industry: '行业' }, [], [])).toBeNull()
     expect(validateImportRecord({ ...record, fields: { ...record.fields, subIndustry: '自有分类' } }, [], [])).toEqual([])

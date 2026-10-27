@@ -15,8 +15,23 @@ export interface ReviewSession {
   cells: Record<number, Record<number, string>>
   rules: ValueRule[]
   completed: Record<number, ImportRecordResult>
+  excluded: Record<number, true>
 }
-export const emptyReview = (): ReviewSession => ({ bulk: {}, edits: {}, cells: {}, rules: [], completed: {} })
+export const emptyReview = (): ReviewSession => ({ bulk: {}, edits: {}, cells: {}, rules: [], completed: {}, excluded: {} })
+
+export const isPendingImportRow = (session: ReviewSession, sourceRow: number): boolean =>
+  !session.completed[sourceRow] && !session.excluded[sourceRow]
+
+export function pendingImportRecords(records: ImportRecordInput[], session: ReviewSession): ImportRecordInput[] {
+  return records.filter((record) => record.sourceRow != null && isPendingImportRow(session, record.sourceRow))
+}
+
+/** 仅移出当前导入会话，保留原始数据与修正，供用户恢复。 */
+export function excludeImportRows(session: ReviewSession, sourceRows: number[]): ReviewSession {
+  const excluded = { ...session.excluded }
+  for (const sourceRow of sourceRows) if (!session.completed[sourceRow]) excluded[sourceRow] = true
+  return { ...session, excluded }
+}
 export const valueText = (value: unknown): string => Array.isArray(value) ? value.join('、') : String(value ?? '').trim()
 export const fieldValue = (fields: Partial<ProjectInput>, key: string): unknown => key.startsWith('custom.')
   ? fields.customFields?.[key.slice(7)] : (fields as Record<string, unknown>)[key]

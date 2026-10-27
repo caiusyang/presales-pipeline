@@ -16,7 +16,7 @@ import {
 import { autoMapColumns, pendingFieldsFromTargets } from '@/components/impexp/autoMapping'
 import type { ColumnTarget, RuleDraft } from '@/components/impexp/importTransform'
 import { useCustomFieldDefs } from '@/hooks/queries'
-import { emptyReview } from '@/components/impexp/importReview'
+import { emptyReview, isPendingImportRow } from '@/components/impexp/importReview'
 
 const STEPS = ['上传解析', '映射调整', '确认执行']
 
@@ -30,7 +30,7 @@ export default function ImportPage() {
   const [session, setSession] = useState(emptyReview)
   const [uploadVersion, setUploadVersion] = useState(0)
   const customDefsQ = useCustomFieldDefs()
-  const hasPending = parsed != null && parsed.rows.some((row, index) => row.some((cell) => cell.trim()) && !session.completed[parsed.dataStartRow + index])
+  const hasPending = parsed != null && parsed.rows.some((row, index) => row.some((cell) => cell.trim()) && isPendingImportRow(session, parsed.dataStartRow + index))
   const blocker = useBlocker(hasPending)
   useEffect(() => {
     if (blocker.state === 'blocked') {
