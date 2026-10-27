@@ -7,6 +7,8 @@ import com.presales.pipeline.dictionary.dto.DictionaryRequest;
 import com.presales.pipeline.project.Project;
 import com.presales.pipeline.project.ProjectRepository;
 import com.presales.pipeline.product.ProductCatalog;
+import com.presales.pipeline.config.CustomFieldDefinition;
+import com.presales.pipeline.config.CustomFieldDefinitionRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -25,13 +27,20 @@ public class DictionaryService {
     private final DictionaryRepository repository;
     private final ProjectRepository projectRepository;
     private final ChangeLogService changeLogService;
+    private final DictionaryCategoryService categoryService;
+    private final DictionaryCategoryRepository categories;
+    private final CustomFieldDefinitionRepository customFields;
 
     public DictionaryService(DictionaryRepository repository,
                              ProjectRepository projectRepository,
-                             ChangeLogService changeLogService) {
+                             ChangeLogService changeLogService, DictionaryCategoryService categoryService,
+                             DictionaryCategoryRepository categories, CustomFieldDefinitionRepository customFields) {
         this.repository = repository;
         this.projectRepository = projectRepository;
         this.changeLogService = changeLogService;
+        this.categoryService = categoryService;
+        this.categories = categories;
+        this.customFields = customFields;
     }
 
     @Transactional(readOnly = true)
@@ -60,6 +69,7 @@ public class DictionaryService {
 
     @Transactional
     public DictionaryNodeResponse create(DictionaryRequest request) {
+        categoryService.ensureLegacyCategory(normalizeType(request.type()));
         String type = normalizeType(request.type());
         String value = clean(request.value());
         if ("product".equals(type)) {
@@ -76,6 +86,24 @@ public class DictionaryService {
         return toResponse(repository.save(item));
     }
 
+    @Transactional(readOnly = true)
+    public DictionaryNodeResponse preview(DictionaryRequest request) {
+        String type = normalizeType(request.type());
+        String value = clean(request.value());
+        if (value.isEmpty() || value.length() > 255) throw BusinessException.badRequest("字典值不能为空且最多255个字符");
+        if ("product".equals(type)) value = ProductCatalog.normalize(value);
+        DictionaryItem parent = resolveParent(request.parentId(), type, null);
+        return new DictionaryNodeResponse(null, type, value, parent == null ? null : parent.getId(), request.sortOrder(), null, null, List.of());
+    }
+
+    @Transactional(readOnly = true)
+    public Long existingId(String type, String value, Long parentId) {
+        return repository.findAllByTypeAndDeletedFalseOrderBySortOrderAscIdAsc(type).stream()
+                .filter(item -> item.getValue().equalsIgnoreCase(value))
+                .filter(item -> Objects.equals(item.getParent() == null ? null : item.getParent().getId(), parentId))
+                .map(DictionaryItem::getId).findFirst().orElse(null);
+    }
+
     @Transactional
     public DictionaryNodeResponse update(Long id, DictionaryRequest request) {
         DictionaryItem item = getActive(id);
@@ -88,6 +116,13 @@ public class DictionaryService {
         ensureNoDuplicate(type, value, parent, id);
 
         boolean referenced = isReferenced(item);
+        if (!item.getType().equals(type) && repository.existsByParentIdAndDeletedFalse(id)) {
+            throw BusinessException.conflict("该字典项仍有下级项，不能修改类型");
+        }
+        if (!item.getType().equals(type) && linkedFields(item).stream().anyMatch(field -> !field.isDeleted() && field.isRequired())
+                && repository.findAllByTypeAndDeletedFalseOrderBySortOrderAscIdAsc(item.getType()).size() == 1) {
+            throw BusinessException.conflict("该字典关联必填字段，至少需要保留一个选项");
+        }
         if (referenced && !item.getType().equals(type)) {
             throw BusinessException.conflict("该字典项已被项目引用，不能修改类型");
         }
@@ -119,6 +154,10 @@ public class DictionaryService {
         if (isReferenced(item)) {
             throw BusinessException.conflict("该字典项已被项目引用，不能删除");
         }
+        if (linkedFields(item).stream().anyMatch(field -> !field.isDeleted() && field.isRequired())
+                && repository.findAllByTypeAndDeletedFalseOrderBySortOrderAscIdAsc(item.getType()).size() == 1) {
+            throw BusinessException.conflict("该字典关联必填字段，至少需要保留一个选项");
+        }
         item.setDeleted(true);
     }
 
@@ -132,6 +171,7 @@ public class DictionaryService {
         if (item.getParent() != null && item.getParent().isDeleted()) {
             throw BusinessException.conflict("请先恢复该字典项的上级项");
         }
+        if (!DictionaryCategoryService.BUILT_IN_TYPES.contains(item.getType())) requireCustomCategory(item.getType());
         ensureNoDuplicate(item.getType(), item.getValue(), item.getParent(), id);
         item.setDeleted(false);
         return toResponse(item);
@@ -220,6 +260,12 @@ public class DictionaryService {
     }
 
     private DictionaryItem resolveParent(Long parentId, String type, Long currentId) {
+        if (!DictionaryCategoryService.BUILT_IN_TYPES.contains(type)) {
+            requireCustomCategory(type);
+            if (parentId != null) throw BusinessException.badRequest("自定义字典不支持上级关联");
+        } else if (Set.of("track", "industry", "solution").contains(type) && parentId != null) {
+            throw BusinessException.badRequest("该字典类型不支持上级关联");
+        }
         if (parentId == null) {
             if (Set.of("sub_industry", "sub_solution", "product").contains(type)) {
                 throw BusinessException.badRequest(typeLabel(type) + "必须选择上级");
@@ -254,11 +300,15 @@ public class DictionaryService {
     }
 
     private boolean isReferenced(DictionaryItem item) {
-        return projectRepository.findAllByDeletedFalseOrderByIdAsc().stream()
+        return projectRepository.findAll().stream()
                 .anyMatch(project -> matchesProject(project, item));
     }
 
     private boolean matchesProject(Project project, DictionaryItem item) {
+        if (!DictionaryCategoryService.BUILT_IN_TYPES.contains(item.getType())) {
+            return linkedFields(item).stream().anyMatch(field -> Objects.equals(
+                    customValue(project.getCustomFields().get(field.getFieldKey())), item.getValue()));
+        }
         String projectValue = switch (item.getType()) {
             case "solution" -> project.getSolution();
             case "sub_solution" -> project.getSubSolution();
@@ -283,7 +333,8 @@ public class DictionaryService {
     }
 
     private void cascadeProjectValue(DictionaryItem item, String newValue) {
-        for (Project project : projectRepository.findAllByDeletedFalseOrderByIdAsc()) {
+        List<CustomFieldDefinition> linked = linkedFields(item);
+        for (Project project : projectRepository.findAll()) {
             if (!matchesProject(project, item)) {
                 continue;
             }
@@ -297,7 +348,17 @@ public class DictionaryService {
                 case "track" -> project.setTrack(newValue);
                 case "industry" -> project.setIndustry(newValue);
                 case "sub_industry" -> project.setSubIndustry(newValue);
-                default -> throw BusinessException.conflict("该类型不支持自动更新项目引用");
+                default -> {
+                    Map<String, Object> values = new LinkedHashMap<>(project.getCustomFields());
+                    for (CustomFieldDefinition definition : linked) {
+                        if (Objects.equals(customValue(values.get(definition.getFieldKey())), oldValue)) {
+                            values.put(definition.getFieldKey(), newValue);
+                            changeLogService.log(project, "custom." + definition.getFieldKey(), oldValue, newValue, ChangeLogService.SOURCE_MANUAL);
+                        }
+                    }
+                    project.setCustomFields(values);
+                    continue;
+                }
             }
             changeLogService.log(project, field, oldValue, newValue, ChangeLogService.SOURCE_MANUAL);
         }
@@ -306,6 +367,18 @@ public class DictionaryService {
     private DictionaryItem getActive(Long id) {
         return repository.findByIdAndDeletedFalse(id)
                 .orElseThrow(() -> BusinessException.notFound("字典项不存在"));
+    }
+
+    private void requireCustomCategory(String type) {
+        categories.findByTypeAndDeletedFalse(type).orElseThrow(() -> BusinessException.badRequest("字典分类不存在或已删除"));
+    }
+
+    private List<CustomFieldDefinition> linkedFields(DictionaryItem item) {
+        return customFields.findAll().stream().filter(field -> item.getType().equals(field.getDictionaryType())).toList();
+    }
+
+    private String customValue(Object value) {
+        return value == null ? null : String.valueOf(value).trim();
     }
 
     private String normalizeType(String type) {

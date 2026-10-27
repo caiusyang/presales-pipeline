@@ -13,6 +13,8 @@ import com.presales.pipeline.config.ImportMapping;
 import com.presales.pipeline.config.ImportMappingRepository;
 import com.presales.pipeline.dictionary.DictionaryItem;
 import com.presales.pipeline.dictionary.DictionaryRepository;
+import com.presales.pipeline.dictionary.DictionaryCategory;
+import com.presales.pipeline.dictionary.DictionaryCategoryRepository;
 import com.presales.pipeline.progress.ProgressLog;
 import com.presales.pipeline.progress.ProgressLogRepository;
 import com.presales.pipeline.project.Project;
@@ -42,6 +44,7 @@ public class BackupService {
     private final ProgressLogRepository progressRepository;
     private final ProjectProductRepository projectProductRepository;
     private final DictionaryRepository dictionaryRepository;
+    private final DictionaryCategoryRepository categoryRepository;
     private final ImportMappingRepository importMappingRepository;
     private final ExportTemplateRepository exportTemplateRepository;
     private final CustomFieldDefinitionRepository customFieldRepository;
@@ -55,12 +58,13 @@ public class BackupService {
                          ImportMappingRepository importMappingRepository,
                          ExportTemplateRepository exportTemplateRepository,
                          CustomFieldDefinitionRepository customFieldRepository,
-                         ChangeLogRepository changeLogRepository) {
+                         ChangeLogRepository changeLogRepository, DictionaryCategoryRepository categoryRepository) {
         this.projectRepository = projectRepository;
         this.revenueRepository = revenueRepository;
         this.progressRepository = progressRepository;
         this.projectProductRepository = projectProductRepository;
         this.dictionaryRepository = dictionaryRepository;
+        this.categoryRepository = categoryRepository;
         this.importMappingRepository = importMappingRepository;
         this.exportTemplateRepository = exportTemplateRepository;
         this.customFieldRepository = customFieldRepository;
@@ -76,6 +80,7 @@ public class BackupService {
         tables.put("project_products", projectProductRepository.findAll(Sort.by("id")).stream()
                 .map(this::projectProductRow).toList());
         tables.put("dictionaries", dictionaryRepository.findAll(Sort.by("id")).stream().map(this::dictionaryRow).toList());
+        tables.put("dictionary_categories", categoryRepository.findAll(Sort.by("id")).stream().map(this::categoryRow).toList());
         tables.put("import_mappings", importMappingRepository.findAll(Sort.by("id")).stream().map(this::mappingRow).toList());
         tables.put("export_templates", exportTemplateRepository.findAll(Sort.by("id")).stream().map(this::templateRow).toList());
         tables.put("custom_field_definitions", customFieldRepository.findAll(Sort.by("id")).stream()
@@ -136,6 +141,13 @@ public class BackupService {
         return row;
     }
 
+    private Map<String, Object> categoryRow(DictionaryCategory category) {
+        Map<String, Object> row = softBase(category);
+        row.put("type", category.getType()); row.put("label", category.getLabel());
+        row.put("builtIn", category.isBuiltIn()); row.put("sortOrder", category.getSortOrder());
+        return row;
+    }
+
     private Map<String, Object> mappingRow(ImportMapping mapping) {
         Map<String, Object> row = softBase(mapping);
         row.put("name", mapping.getName());
@@ -159,6 +171,7 @@ public class BackupService {
         row.put("fieldType", definition.getFieldType());
         row.put("required", definition.isRequired());
         row.put("options", definition.getOptions());
+        row.put("dictionaryType", definition.getDictionaryType());
         row.put("sortOrder", definition.getSortOrder());
         return row;
     }

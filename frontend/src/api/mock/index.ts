@@ -2,6 +2,7 @@ import type {
   ChangeLog,
   CustomFieldDef,
   DictNode,
+  DictionaryCategory,
   ID,
   ImportMapping,
   ProgressLog,
@@ -13,6 +14,9 @@ import type {
 import type {
   ApiClient,
   CustomerAnalysis,
+  CustomFieldInput,
+  DictionaryInput,
+  DictionaryImportResult,
   ExportFieldOption,
   ExportResult,
   ImportRecordInput,
@@ -37,7 +41,7 @@ import { mergeImportFields, validateImportRecord, productValues } from '@/compon
 // 字典树级联删除保护 / 收入汇总 / SQL 式聚合），localStorage 持久化。
 // ============================================================
 
-// 修改种子结构时提升版本，避免旧 localStorage 让演示页面继续显示过时数据。
+// 保持存储 key 稳定；新增结构在 load 中补齐，保留用户演示数据。
 const STORAGE_KEY = 'presales-pipeline-mock-v6'
 const LATENCY = 120
 const PRODUCT_EXPORT_PREFIX = 'product.'
@@ -76,6 +80,18 @@ function load(): MockDB {
         ...template,
         columns: expandLegacyProductColumns(template.scope, template.columns),
       }))
+      if (!stored.dictionaryCategories) {
+        stored.dictionaryCategories = [
+          { id: stored.seq++, type: 'track', label: '赛道', builtIn: true, sortOrder: 10 },
+          { id: stored.seq++, type: 'industry', label: '行业', builtIn: true, sortOrder: 20 },
+          { id: stored.seq++, type: 'solution', label: '方案与产品', builtIn: true, sortOrder: 30 },
+        ]
+        for (const type of new Set(stored.dictionaries.map((item) => item.type))) {
+          if (['track', 'industry', 'sub_industry', 'solution', 'sub_solution', 'product'].includes(type)) continue
+          stored.dictionaryCategories.push({ id: stored.seq++, type, label: type, builtIn: false, sortOrder: 100 })
+        }
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(stored))
+      }
       return stored
     }
   } catch {
@@ -164,6 +180,56 @@ function validateProjectFields(fields: Partial<ProjectInput>) {
     if (!norm(fields.subSolution)) throw new Error('中标时必须确认细分解决方案')
     if (!fields.purchasedProducts?.length) throw new Error('中标时至少选择一个已购产品')
   }
+  validateCustomValues(fields.customFields ?? {}, effectiveCustomFieldDefs())
+}
+
+function effectiveCustomFieldDefs(): CustomFieldDef[] {
+  return db.customFieldDefs.map((def) => ({ ...def, options: def.dictionaryType
+    ? db.dictionaries.filter((item) => item.type === def.dictionaryType)
+      .sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id).map((item) => item.value)
+    : [...def.options] }))
+}
+
+function validateCustomValues(values: ProjectInput['customFields'], definitions: CustomFieldDef[]) {
+  for (const def of definitions) {
+    const value = norm(values?.[def.fieldKey])
+    if (!value) {
+      if (def.required) throw new Error(`${def.label}为必填项`)
+      continue
+    }
+    if (def.fieldType === 'option' && !def.options.includes(value)) throw new Error(`${def.label}不在可选项中：${value}`)
+    if (def.fieldType === 'number' && !Number.isFinite(Number(value))) throw new Error(`${def.label}必须为数字`)
+    if (def.fieldType === 'date' && (!DATE_RE.test(value) || Number.isNaN(Date.parse(value)))) throw new Error(`${def.label}必须为有效日期`)
+  }
+}
+
+function prepareCustomField(input: CustomFieldInput, validateExisting = false): Omit<CustomFieldDef, 'id'> {
+  const dictionaryType = norm(input.dictionaryType) || null
+  if (dictionaryType && input.fieldType !== 'option') throw new Error('只有选项字段可以关联字典')
+  if (dictionaryType && !db.dictionaryCategories.some((c) => c.type === dictionaryType && !c.builtIn)) throw new Error('关联的自定义字典不存在')
+  const options = [...new Set(input.options.map(norm).filter(Boolean))]
+  const effective = dictionaryType ? db.dictionaries.filter((d) => d.type === dictionaryType).map((d) => d.value) : options
+  if (input.fieldType === 'option' && !effective.length && (!dictionaryType || input.required)) throw new Error('选项类型需提供候选项，必填字段关联的字典不能为空')
+  const candidate = { ...input, label: norm(input.label), dictionaryType, options: dictionaryType ? [] : options }
+  if (validateExisting) for (const project of db.projects) validateCustomValues(project.customFields, [{ ...candidate, id: 0, options: effective }])
+  return candidate
+}
+
+function dictionaryValue(input: DictionaryInput, existingId?: ID): string {
+  if (!/^[a-z][a-z0-9_]{0,63}$/.test(input.type)) throw new Error('字典编码格式不正确')
+  const value = input.type === 'product' ? normalizeProductCode(input.value) : norm(input.value)
+  if (!value) throw new Error(input.type === 'product' ? `已购产品只能是：${PRODUCT_CATALOG.join('、')}` : '字典值不能为空')
+  if (value.length > 255) throw new Error('字典值不能超过255个字符')
+  const expectedParent = ({ sub_industry: 'industry', sub_solution: 'solution', product: 'sub_solution' } as Record<string, string>)[input.type]
+  const parent = db.dictionaries.find((d) => d.id === input.parentId)
+  if (expectedParent ? parent?.type !== expectedParent : input.parentId != null) throw new Error(expectedParent ? '请选择正确的父级字典项' : '此字典不支持下级或父级')
+  if (db.dictionaries.some((d) => d.id !== existingId && d.type === input.type && d.parentId === input.parentId && d.value.toLowerCase() === value.toLowerCase())) throw new Error('同级下已存在同名字典项')
+  return value
+}
+
+function ensureCustomCategory(type: string) {
+  if (['track', 'industry', 'sub_industry', 'solution', 'sub_solution', 'product'].includes(type)) return
+  if (!db.dictionaryCategories.some((c) => c.type === type)) db.dictionaryCategories.push({ id: nextId(), type, label: type, builtIn: false, sortOrder: 100 })
 }
 
 /** 字典平铺 → 树 */
@@ -179,14 +245,14 @@ function buildTree(items: DictNode[]): DictNode[] {
 }
 
 function dictUsageCount(item: DictNode): number {
-  return db.projects.filter(alive).filter((p) => {
+  return db.projects.filter((p) => {
     if (item.type === 'track') return p.track === item.value
     if (item.type === 'solution') return p.solution === item.value
     if (item.type === 'sub_solution') return p.subSolution === item.value
     if (item.type === 'product') return p.purchasedProducts.includes(item.value)
     if (item.type === 'industry') return p.industry === item.value
     if (item.type === 'sub_industry') return p.subIndustry === item.value
-    return false
+    return db.customFieldDefs.some((def) => def.dictionaryType === item.type && norm(p.customFields[def.fieldKey]) === item.value)
   }).length
 }
 
@@ -510,6 +576,79 @@ export const mockApi: ApiClient = {
   },
 
   // ---------------- 字典 ----------------
+  listDictionaryCategories() {
+    return delay(() => db.dictionaryCategories.slice().sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id).map((c) => ({ ...c })))
+  },
+  createDictionaryCategory(input) {
+    return delay(() => {
+      if (!/^[a-z][a-z0-9_]{0,63}$/.test(input.type)) throw new Error('字典编码格式不正确')
+      if (['track', 'industry', 'sub_industry', 'solution', 'sub_solution', 'product'].includes(input.type)
+        || db.dictionaryCategories.some((c) => c.type === input.type)) throw new Error('字典编码已存在或为系统保留编码')
+      const label = norm(input.label)
+      if (!label || label.length > 255) throw new Error('字典名称不能为空且不能超过255个字符')
+      const category: DictionaryCategory = { id: nextId(), ...input, label, builtIn: false, createdAt: now(), updatedAt: now() }
+      db.dictionaryCategories.push(category)
+      persist()
+      return { ...category }
+    })
+  },
+  updateDictionaryCategory(id, input) {
+    return delay(() => {
+      const category = db.dictionaryCategories.find((c) => c.id === id)
+      if (!category) throw new Error('字典不存在')
+      if (category.builtIn) throw new Error('系统字典不允许修改分类')
+      if (input.type !== category.type) throw new Error('字典编码创建后不可修改')
+      const label = norm(input.label)
+      if (!label || label.length > 255) throw new Error('字典名称不能为空且不能超过255个字符')
+      Object.assign(category, { label, sortOrder: input.sortOrder, updatedAt: now() })
+      persist()
+      return { ...category }
+    })
+  },
+  deleteDictionaryCategory(id) {
+    return delay(() => {
+      const category = db.dictionaryCategories.find((c) => c.id === id)
+      if (!category) throw new Error('字典不存在')
+      if (category.builtIn) throw new Error('系统字典不可删除')
+      if (db.dictionaries.some((d) => d.type === category.type)) throw new Error('请先删除该字典的全部字典值')
+      if (db.customFieldDefs.some((def) => def.dictionaryType === category.type)) throw new Error('该字典已被自定义字段关联，禁止删除')
+      db.dictionaryCategories = db.dictionaryCategories.filter((c) => c.id !== id)
+      persist()
+    })
+  },
+  importDictionaryValues(input) {
+    return delay(() => {
+      if (!input.records.length || input.records.length > 5000) throw new Error('请提供1至5000行字典值')
+      const result: DictionaryImportResult = { dryRun: input.dryRun, added: 0, skipped: 0, failed: 0, details: [] }
+      const seen = new Set<string>(db.dictionaries.filter((d) => d.type === input.type && d.parentId === input.parentId).map((d) => d.value.toLowerCase()))
+      let sortOrder = Math.max(0, ...db.dictionaries.filter((d) => d.type === input.type && d.parentId === input.parentId).map((d) => d.sortOrder))
+      for (const record of input.records) {
+        let value = norm(record.value)
+        try {
+          if (!db.dictionaryCategories.some((c) => c.type === input.type) && !['sub_industry', 'sub_solution', 'product'].includes(input.type)) throw new Error('字典不存在')
+          if (!Number.isInteger(record.sourceRow) || record.sourceRow < 1) throw new Error('源行号必须为正整数')
+          // Validate parent/type/value independently of existing duplicates.
+          value = dictionaryValue({ type: input.type, parentId: input.parentId, value, sortOrder },
+            db.dictionaries.find((d) => d.type === input.type && d.parentId === input.parentId && d.value.toLowerCase() === value.toLowerCase())?.id)
+          if (seen.has(value.toLowerCase())) {
+            result.skipped++
+            result.details.push({ ...record, value, status: 'skipped', reason: '同级已存在或本批次重复' })
+            continue
+          }
+          seen.add(value.toLowerCase())
+          const item: DictNode | null = input.dryRun ? null : { id: nextId(), type: input.type, value, parentId: input.parentId, sortOrder: sortOrder += 10, createdAt: now(), updatedAt: now() }
+          if (item) db.dictionaries.push(item)
+          result.added++
+          result.details.push({ ...record, value, status: 'added', ...(item ? { id: item.id } : {}) })
+        } catch (error) {
+          result.failed++
+          result.details.push({ ...record, value, status: 'failed', reason: (error as Error).message })
+        }
+      }
+      if (!input.dryRun) persist()
+      return result
+    })
+  },
   getDictionaries(type?: string) {
     return delay(() => {
       const items = db.dictionaries.filter((d) => {
@@ -532,18 +671,8 @@ export const mockApi: ApiClient = {
 
   createDictItem(input) {
     return delay(() => {
-      const value = input.type === 'product' ? normalizeProductCode(input.value) : norm(input.value)
-      if (!value) {
-        throw new Error(input.type === 'product' ? `已购产品只能是：${PRODUCT_CATALOG.join('、')}` : '字典值不能为空')
-      }
-      const dup = db.dictionaries.find(
-        (d) => d.type === input.type && (d.parentId ?? null) === (input.parentId ?? null) && d.value === value,
-      )
-      if (dup) throw new Error('同级下已存在同名字典项')
-      if (input.parentId) {
-        const parent = db.dictionaries.find((d) => d.id === input.parentId)
-        if (!parent) throw new Error('父级不存在')
-      }
+      const value = dictionaryValue(input)
+      ensureCustomCategory(input.type)
       const item: DictNode = { id: nextId(), type: input.type, value, parentId: input.parentId ?? null, sortOrder: input.sortOrder, createdAt: now(), updatedAt: now() }
       db.dictionaries.push(item)
       persist()
@@ -555,13 +684,15 @@ export const mockApi: ApiClient = {
     return delay(() => {
       const item = db.dictionaries.find((d) => d.id === id)
       if (!item) throw new Error('字典项不存在')
+      if (input.type !== item.type) throw new Error('字典类型不可修改')
+      const nextValue = dictionaryValue(input, id)
       if (item.type === 'product' && input.value !== undefined && norm(input.value) !== item.value) {
         throw new Error('固定产品编码不可重命名，请删除后重新关联')
       }
       // 改名同步引用并写日志（对齐后端行为）
       if (input.value !== undefined && norm(input.value) !== item.value) {
-        const nv = norm(input.value)
-        for (const p of db.projects.filter(alive)) {
+        const nv = nextValue
+        for (const p of db.projects) {
           const field =
             item.type === 'track' ? 'track'
             : item.type === 'solution' ? 'solution'
@@ -576,6 +707,12 @@ export const mockApi: ApiClient = {
           if (item.type === 'product' && p.purchasedProducts.includes(item.value)) {
             p.purchasedProducts = p.purchasedProducts.map((product) => product === item.value ? nv : product)
             db.changeLogs.push({ id: nextId(), projectId: p.id, operator: '我', field: 'purchasedProducts', oldValue: item.value, newValue: nv, source: 'manual', createdAt: now() })
+          }
+          for (const def of db.customFieldDefs.filter((d) => d.dictionaryType === item.type)) {
+            if (norm(p.customFields[def.fieldKey]) !== item.value) continue
+            p.customFields = { ...p.customFields, [def.fieldKey]: nv }
+            p.updatedAt = now()
+            db.changeLogs.push({ id: nextId(), projectId: p.id, operator: '我', field: `custom.${def.fieldKey}`, oldValue: item.value, newValue: nv, source: 'manual', createdAt: now() })
           }
         }
         item.value = nv
@@ -596,6 +733,8 @@ export const mockApi: ApiClient = {
       if (children.length) throw new Error(`请先删除其下 ${children.length} 个子项`)
       const used = dictUsageCount(item)
       if (used) throw new Error(`该字典项被 ${used} 个项目引用，禁止删除`)
+      if (db.customFieldDefs.some((def) => def.dictionaryType === item.type && def.required)
+        && db.dictionaries.filter((d) => d.type === item.type).length === 1) throw new Error('必填字段关联的字典需保留至少一个字典值')
       db.dictionaries = db.dictionaries.filter((d) => d.id !== id)
       persist()
     })
@@ -675,27 +814,28 @@ export const mockApi: ApiClient = {
   // ---------------- 配置：自定义字段 ----------------
   listCustomFields() {
     return delay(() =>
-      db.customFieldDefs.sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id).map((d) => ({ ...d, options: [...d.options] })),
+      effectiveCustomFieldDefs().sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id),
     )
   },
   createCustomField(input) {
     return delay(() => {
       if (!/^[a-z][a-z0-9_]{0,63}$/.test(input.fieldKey)) throw new Error('fieldKey 只能使用小写字母、数字和下划线，且必须以字母开头')
       if (db.customFieldDefs.some((d) => d.fieldKey === input.fieldKey)) throw new Error(`字段 key 已存在：${input.fieldKey}`)
-      if (input.fieldType === 'option' && !input.options.length) throw new Error('选项类型必须提供候选项')
-      const def: CustomFieldDef = { id: nextId(), ...input, createdAt: now(), updatedAt: now() }
+      const prepared = prepareCustomField(input)
+      const def: CustomFieldDef = { id: nextId(), ...prepared, createdAt: now(), updatedAt: now() }
       db.customFieldDefs.push(def)
       persist()
-      return { ...def }
+      return effectiveCustomFieldDefs().find((d) => d.id === def.id)!
     })
   },
   updateCustomField(id, input) {
     return delay(() => {
       const def = db.customFieldDefs.find((d) => d.id === id)
       if (!def) throw new Error('字段定义不存在')
-      Object.assign(def, input, { updatedAt: now() })
+      if (def.fieldKey !== input.fieldKey) throw new Error('字段编码创建后不可修改')
+      Object.assign(def, prepareCustomField(input, true), { updatedAt: now() })
       persist()
-      return { ...def }
+      return effectiveCustomFieldDefs().find((d) => d.id === def.id)!
     })
   },
   deleteCustomField(id) {
@@ -723,7 +863,7 @@ export const mockApi: ApiClient = {
             && norm(p.customerName).toLowerCase() === norm(rec.fields.customerName).toLowerCase()
             && norm(p.projectName).toLowerCase() === norm(rec.fields.projectName).toLowerCase())
         const fields = mergeImportFields(rec.fields, existing)
-        const issues = validateImportRecord({ ...rec, fields }, db.dictionaries, db.customFieldDefs, pendingFields)
+        const issues = validateImportRecord({ ...rec, fields }, db.dictionaries, effectiveCustomFieldDefs(), pendingFields)
         if (db.projects.some((p) => p.deleted && find(p))) issues.push({ field: 'externalId', code: 'conflict', message: '外部编号对应的项目在回收站中，请先恢复后再导入' })
         if (db.projects.some((p) => p.id !== existing?.id && alive(p)
           && norm(p.customerName).toLowerCase() === norm(fields.customerName).toLowerCase()

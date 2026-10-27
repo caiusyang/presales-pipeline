@@ -15,6 +15,8 @@ import type {
 import type {
   CustomFieldInput,
   DictionaryInput,
+  DictionaryCategoryInput,
+  DictionaryImportInput,
   ExportFilters,
   ImportRecordInput,
   ProjectListQuery,
@@ -34,6 +36,7 @@ export const qk = {
   revenueMatrix: (params: RevenueMatrixParams) => ['revenue-matrix', params] as const,
   stats: (dim: StatsDim, year?: number) => ['stats', dim, year] as const,
   dicts: (type?: string) => ['dicts', type ?? 'all'] as const,
+  dictionaryCategories: () => ['dictionary-categories'] as const,
   mappings: () => ['import-mappings'] as const,
   templates: () => ['export-templates'] as const,
   customFields: () => ['custom-fields'] as const,
@@ -165,6 +168,42 @@ export function useRevenueStats(dim: StatsDim, year?: number) {
 }
 
 // ---------------- 字典 ----------------
+export function useDictionaryCategories() {
+  return useQuery({ queryKey: qk.dictionaryCategories(), queryFn: () => api.listDictionaryCategories() })
+}
+
+export function useDictionaryCategoryMutations() {
+  const qc = useQueryClient()
+  const invalidate = () => qc.invalidateQueries({ queryKey: qk.dictionaryCategories() })
+  const create = useMutation({
+    mutationFn: (input: DictionaryCategoryInput) => api.createDictionaryCategory(input),
+    onSuccess: () => { invalidate(); toast.success('字典已创建') }, onError: onErr,
+  })
+  const update = useMutation({
+    mutationFn: ({ id, input }: { id: ID; input: DictionaryCategoryInput }) => api.updateDictionaryCategory(id, input),
+    onSuccess: () => { invalidate(); toast.success('字典已保存') }, onError: onErr,
+  })
+  const remove = useMutation({
+    mutationFn: (id: ID) => api.deleteDictionaryCategory(id),
+    onSuccess: () => { invalidate(); toast.success('字典已删除') }, onError: onErr,
+  })
+  return { create, update, remove }
+}
+
+export function useImportDictionaryValues() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (input: DictionaryImportInput) => api.importDictionaryValues(input),
+    onSuccess: (result) => {
+      if (!result.dryRun) {
+        qc.invalidateQueries({ queryKey: ['dicts'] })
+        qc.invalidateQueries({ queryKey: qk.customFields() })
+        qc.invalidateQueries({ queryKey: qk.dictionaryCategories() })
+      }
+    }, onError: onErr,
+  })
+}
+
 /** type 省略时返回全部类型的树（行业带子行业 children） */
 export function useDictionaries(type?: string) {
   return useQuery({ queryKey: qk.dicts(type), queryFn: () => api.getDictionaries(type) })
@@ -174,6 +213,8 @@ export function useDictMutations() {
   const qc = useQueryClient()
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ['dicts'] })
+    qc.invalidateQueries({ queryKey: qk.customFields() })
+    qc.invalidateQueries({ queryKey: qk.dictionaryCategories() })
     qc.invalidateQueries({ queryKey: ['projects'] }) // 改名会同步项目引用
     qc.invalidateQueries({ queryKey: ['project-detail'] })
     qc.invalidateQueries({ queryKey: ['customers'] })

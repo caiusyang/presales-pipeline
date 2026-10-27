@@ -3,6 +3,7 @@ import type {
   CustomFieldDef,
   CustomFieldType,
   DictNode,
+  DictionaryCategory,
   ExportColumn,
   ExportScope,
   ExportTemplate,
@@ -141,12 +142,34 @@ export interface DictionaryInput {
   sortOrder: number
 }
 
+export interface DictionaryCategoryInput {
+  type: string
+  label: string
+  sortOrder: number
+}
+
+export interface DictionaryImportInput {
+  type: string
+  parentId: ID | null
+  dryRun: boolean
+  records: { sourceRow: number; value: string }[]
+}
+
+export interface DictionaryImportResult {
+  dryRun: boolean
+  added: number
+  skipped: number
+  failed: number
+  details: { sourceRow: number; value: string; status: 'added' | 'skipped' | 'failed'; reason?: string | null; id?: ID | null }[]
+}
+
 export interface CustomFieldInput {
   fieldKey: string
   label: string
   fieldType: CustomFieldType
   required: boolean
   options: string[]
+  dictionaryType?: string | null
   sortOrder: number
 }
 
@@ -241,6 +264,11 @@ export interface ApiClient {
   getRevenueStats(params: { dim: StatsDim; year?: number }): Promise<RevenueStats>
 
   // 字典（树）
+  listDictionaryCategories(): Promise<DictionaryCategory[]>
+  createDictionaryCategory(input: DictionaryCategoryInput): Promise<DictionaryCategory>
+  updateDictionaryCategory(id: ID, input: DictionaryCategoryInput): Promise<DictionaryCategory>
+  deleteDictionaryCategory(id: ID): Promise<void>
+  importDictionaryValues(input: DictionaryImportInput): Promise<DictionaryImportResult>
   getDictionaries(type?: string): Promise<DictNode[]>
   createDictItem(input: DictionaryInput): Promise<DictNode>
   updateDictItem(id: ID, input: DictionaryInput): Promise<DictNode>

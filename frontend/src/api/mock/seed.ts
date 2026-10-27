@@ -2,6 +2,7 @@ import type {
   ChangeLog,
   CustomFieldDef,
   DictNode,
+  DictionaryCategory,
   ExportTemplate,
   ImportMapping,
   ProgressLog,
@@ -22,6 +23,7 @@ export interface MockDB {
   progressLogs: ProgressLog[]
   changeLogs: ChangeLog[]
   dictionaries: DictNode[]
+  dictionaryCategories: DictionaryCategory[]
   importMappings: ImportMapping[]
   exportTemplates: ExportTemplate[]
   customFieldDefs: CustomFieldDef[]
@@ -152,6 +154,12 @@ export function seedDB(): MockDB {
   const rand = mulberry32(20260817)
   let seq = 1
   const now = new Date().toISOString()
+  const dictionaryCategories: DictionaryCategory[] = [
+    { id: seq++, type: 'track', label: '赛道', builtIn: true, sortOrder: 10 },
+    { id: seq++, type: 'industry', label: '行业', builtIn: true, sortOrder: 20 },
+    { id: seq++, type: 'solution', label: '方案与产品', builtIn: true, sortOrder: 30 },
+    { id: seq++, type: 'custom_stage', label: '所处阶段', builtIn: false, sortOrder: 40 },
+  ]
 
   // 字典（子行业为 sub_industry 类型，parentId 指向行业）
   const dictionaries: DictNode[] = []
@@ -193,8 +201,13 @@ export function seedDB(): MockDB {
     {
       id: seq++, fieldKey: 'stage', label: '所处阶段', fieldType: 'option', required: false,
       options: ['线索', '方案交流', 'POC', '招采', '谈判', '已签约', '暂停'], sortOrder: 20,
+      dictionaryType: 'custom_stage',
     },
   ]
+
+  customFieldDefs[1].options.forEach((value, i) => dictionaries.push({
+    id: seq++, type: 'custom_stage', value, parentId: null, sortOrder: (i + 1) * 10,
+  }))
 
   // 项目
   const projects: Project[] = []
@@ -353,6 +366,7 @@ export function seedDB(): MockDB {
     progressLogs,
     changeLogs,
     dictionaries,
+    dictionaryCategories,
     importMappings,
     exportTemplates,
     customFieldDefs,

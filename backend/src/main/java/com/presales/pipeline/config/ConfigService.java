@@ -11,6 +11,7 @@ import com.presales.pipeline.config.dto.ImportMappingResponse;
 import com.presales.pipeline.project.Project;
 import com.presales.pipeline.project.ProjectRepository;
 import com.presales.pipeline.product.ProductCatalog;
+import com.presales.pipeline.dictionary.DictionaryOptions;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -36,15 +37,17 @@ public class ConfigService {
     private final ExportTemplateRepository exportTemplateRepository;
     private final CustomFieldDefinitionRepository customFieldRepository;
     private final ProjectRepository projectRepository;
+    private final DictionaryOptions dictionaryOptions;
 
     public ConfigService(ImportMappingRepository importMappingRepository,
                          ExportTemplateRepository exportTemplateRepository,
                          CustomFieldDefinitionRepository customFieldRepository,
-                         ProjectRepository projectRepository) {
+                         ProjectRepository projectRepository, DictionaryOptions dictionaryOptions) {
         this.importMappingRepository = importMappingRepository;
         this.exportTemplateRepository = exportTemplateRepository;
         this.customFieldRepository = customFieldRepository;
         this.projectRepository = projectRepository;
+        this.dictionaryOptions = dictionaryOptions;
     }
 
     @Transactional(readOnly = true)
@@ -214,6 +217,14 @@ public class ConfigService {
     public CustomFieldResponse restoreCustomField(Long id) {
         CustomFieldDefinition definition = customFieldRepository.findById(id)
                 .orElseThrow(() -> BusinessException.notFound("自定义字段不存在"));
+        if (!definition.isDeleted()) return toResponse(definition);
+        CustomFieldRequest request = new CustomFieldRequest(definition.getFieldKey(), definition.getLabel(),
+                definition.getFieldType(), definition.isRequired(), definition.getOptions(), definition.getSortOrder(),
+                definition.getDictionaryType());
+        // Options and project values may have changed while this definition was deleted.
+        // Validate before reactivating so a failure leaves the field deleted atomically.
+        validateExistingValues(request);
+        apply(definition, request, false);
         definition.setDeleted(false);
         return toResponse(definition);
     }
@@ -303,7 +314,10 @@ public class ConfigService {
     private void apply(CustomFieldDefinition definition, CustomFieldRequest request, boolean creating) {
         String type = normalizeFieldType(request.fieldType());
         List<String> options = request.options().stream().map(this::clean).distinct().toList();
-        if ("option".equals(type) && options.isEmpty()) {
+        String dictionaryType = request.dictionaryType();
+        if (dictionaryType != null && !"option".equals(type)) throw BusinessException.badRequest("只有选项型字段可以关联字典");
+        if (dictionaryType != null) options = dictionaryOptions.resolve(dictionaryType);
+        if ("option".equals(type) && options.isEmpty() && (dictionaryType == null || request.required())) {
             throw BusinessException.badRequest("选项型字段至少需要一个选项");
         }
         if (creating) {
@@ -312,18 +326,15 @@ public class ConfigService {
         definition.setLabel(clean(request.label()));
         definition.setFieldType(type);
         definition.setRequired(request.required());
-        definition.setOptions("option".equals(type) ? options : List.of());
+        definition.setDictionaryType(dictionaryType);
+        definition.setOptions("option".equals(type) && dictionaryType == null ? options : List.of());
         definition.setSortOrder(request.sortOrder());
     }
 
     private void validateExistingValues(CustomFieldRequest request) {
         CustomFieldDefinition candidate = new CustomFieldDefinition();
-        candidate.setFieldKey(request.fieldKey());
-        candidate.setLabel(clean(request.label()));
-        candidate.setFieldType(normalizeFieldType(request.fieldType()));
-        candidate.setRequired(request.required());
-        candidate.setOptions(request.options().stream().map(this::clean).distinct().toList());
-        for (Project project : projectRepository.findAllByDeletedFalseOrderByIdAsc()) {
+        apply(candidate, request, true);
+        for (Project project : projectRepository.findAll()) {
             Object value = project.getCustomFields().get(request.fieldKey());
             if (isEmpty(value)) {
                 if (request.required()) {
@@ -347,7 +358,7 @@ public class ConfigService {
                 case "number" -> new BigDecimal(text);
                 case "date" -> LocalDate.parse(text).toString();
                 case "option" -> {
-                    if (!definition.getOptions().contains(text)) {
+                    if (!options(definition).contains(text)) {
                         throw BusinessException.badRequest("字段“" + definition.getLabel() + "”的选项无效");
                     }
                     yield text;
@@ -409,7 +420,11 @@ public class ConfigService {
 
     private CustomFieldResponse toResponse(CustomFieldDefinition definition) {
         return new CustomFieldResponse(definition.getId(), definition.getFieldKey(), definition.getLabel(),
-                definition.getFieldType(), definition.isRequired(), definition.getOptions(), definition.getSortOrder(),
-                definition.getCreatedAt(), definition.getUpdatedAt());
+                definition.getFieldType(), definition.isRequired(), options(definition), definition.getSortOrder(),
+                definition.getCreatedAt(), definition.getUpdatedAt(), definition.getDictionaryType());
+    }
+
+    private List<String> options(CustomFieldDefinition definition) {
+        return definition.getDictionaryType() == null ? definition.getOptions() : dictionaryOptions.resolve(definition.getDictionaryType());
     }
 }

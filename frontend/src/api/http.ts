@@ -194,6 +194,11 @@ export const httpApi: ApiClient = {
   },
 
   // ---------------- 字典 ----------------
+  listDictionaryCategories: () => req('/dictionary-categories'),
+  createDictionaryCategory: (input) => req('/dictionary-categories', { method: 'POST', body: JSON.stringify(input) }),
+  updateDictionaryCategory: (id, input) => req(`/dictionary-categories/${id}`, { method: 'PUT', body: JSON.stringify(input) }),
+  deleteDictionaryCategory: (id) => req(`/dictionary-categories/${id}`, { method: 'DELETE' }),
+  importDictionaryValues: (input) => req('/dictionaries/import', { method: 'POST', body: JSON.stringify(input) }),
   getDictionaries: (type) => req(`/dictionaries${qs({ type })}`),
   createDictItem: (input) => req('/dictionaries', { method: 'POST', body: JSON.stringify(input) }),
   updateDictItem: (id, input) => req(`/dictionaries/${id}`, { method: 'PUT', body: JSON.stringify(input) }),

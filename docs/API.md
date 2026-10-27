@@ -191,7 +191,36 @@
 
 方案目录的类型依次为 `solution`、`sub_solution`、`product`，后两级创建时必须传对应上级的 `parentId`。`product` 的值只能从固定产品目录选择，产品编码不可重命名；产品与不同细分解决方案的关联仍可自行配置。
 
-`type` 使用小写字母、数字和下划线。当前字典管理使用 `track`、`solution`、`sub_solution`、`product`、`industry`、`sub_industry`。项目的 `securityBudget` 是“客户安全预算（万元）”数值字段，不属于字典；`scenario` 是应用场景自由文本，也不属于字典。
+`type` 使用小写字母开头、数字和下划线，最长64字符。内置类型为 `track`、`solution`、`sub_solution`、`product`、`industry`、`sub_industry`；其余为自建字典，均为单层值（`parentId=null`）。项目的 `securityBudget` 是“客户安全预算（万元）”数值字段，不属于字典；`scenario` 是应用场景自由文本，也不属于字典。
+
+### 字典分类
+
+- `GET /api/dictionary-categories`：返回 `{id,type,label,builtIn,sortOrder,createdAt,updatedAt}[]`，包含无值的空字典。
+- `POST /api/dictionary-categories`：请求 `{type,label,sortOrder}`，创建自建字典。
+- `PUT /api/dictionary-categories/{id}`：同上请求，可改显示名称和排序，`type` 不可改。
+- `DELETE /api/dictionary-categories/{id}`：仅可删除没有值、没有自定义字段关联的自建字典；内置分类不可改名或删除。
+
+历史自建类型自动补齐分类，已有字段不自动绑定。界面自动生成稳定编码，分类中文名称可修改；金额和自由文本不因此成为字典。
+
+### 字典值批量导入
+
+`POST /api/dictionaries/import`
+
+```json
+{
+  "type": "custom_region",
+  "parentId": null,
+  "dryRun": true,
+  "records": [
+    { "sourceRow": 2, "value": "华东" },
+    { "sourceRow": 3, "value": "华南" }
+  ]
+}
+```
+
+每批1至5000条，`value` 去除首尾空格，最长255字符；相同类型和上级下现有值、批内重复值忽略大小写跳过。`dryRun=true` 不新增分类、字典项或字段；正式导入每行独立处理，失败不阻挡其他有效值。响应 `{dryRun,added,skipped,failed,details:[{sourceRow,value,status,reason,id}]}`，`status` 为 `added/skipped/failed`；预检的 `added` 表示确认后可新增，尚无 `id`。内置子行业、细分方案和产品导入必须指定正确上级；产品仍受固定产品目录约束。
+
+界面先选字典（或内置层级的目标上级），支持 Excel/XLS/CSV 首个工作表的指定列，及每行一个值的多行粘贴。空行忽略但保留非空值的原始行号。预检后显示重复和错误明细，确认后仅新增有效值，不覆盖现有项。
 
 ## 配置
 
@@ -259,6 +288,8 @@
 ```
 
 `fieldType` 支持 `text/number/date/option`。`fieldKey` 创建后不可改名；被项目数据引用时不可删除。修改类型、必填或选项规则时，后端会先验证全部现有数据。
+
+选项字段可额外传 `"dictionaryType":"custom_region"`、`"options":[]`，关联一个自建字典；非选项字段不能关联，内置分类不可作为自定义字段选项来源。未传或为 `null` 时保持原手填选项行为。响应的 `options` 始终为当前有效选项，字典新增/导入后会实时更新；可选字段允许关联空字典，必填字段不可关联空字典。绑定、切换字典或恢复字段时检查规则与已有项目（含回收站）的值；字典值改名同步关联项目及字段级修改日志，被引用的值禁止删除，生效中的必填字段关联字典不可删到空。已软删除字段的关联仍保护分类，以保留恢复能力。全量备份含分类及字段的 `dictionaryType`。
 
 ## 导入
 

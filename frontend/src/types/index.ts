@@ -97,6 +97,16 @@ export interface DictNode {
   updatedAt?: string
 }
 
+export interface DictionaryCategory {
+  id: ID
+  type: string
+  label: string
+  builtIn: boolean
+  sortOrder: number
+  createdAt?: string
+  updatedAt?: string
+}
+
 // ---------- 自定义字段定义 ----------
 export type CustomFieldType = 'text' | 'number' | 'date' | 'option'
 export interface CustomFieldDef {
@@ -107,6 +117,8 @@ export interface CustomFieldDef {
   required: boolean
   /** fieldType=option 时的候选项 */
   options: string[]
+  /** 关联自定义字典；options 为当前有效字典值，null 表示手动维护选项 */
+  dictionaryType?: string | null
   sortOrder: number
   createdAt?: string
   updatedAt?: string

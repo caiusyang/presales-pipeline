@@ -15,6 +15,10 @@ public record CustomFieldRequest(
         @NotBlank String fieldType,
         boolean required,
         @NotNull List<@NotBlank String> options,
-        int sortOrder
+        int sortOrder,
+        @Pattern(regexp = "^[a-z][a-z0-9_]{0,63}$", message = "字典标识格式不正确") String dictionaryType
 ) {
+    public CustomFieldRequest(String fieldKey, String label, String fieldType, boolean required, List<String> options, int sortOrder) {
+        this(fieldKey, label, fieldType, required, options, sortOrder, null);
+    }
 }

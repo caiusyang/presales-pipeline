@@ -9,12 +9,12 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Table, TableHead, TableHeader, TableRow, TableBody, TableCell } from '@/components/ui/table'
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { useCustomFieldDefs, useCustomers, useDictionaries, useImportRecords, useMappingMutations } from '@/hooks/queries'
-import type { ID, CustomFieldDef, ValueRule } from '@/types'
+import type { ID, CustomFieldDef, DictNode, ValueRule } from '@/types'
 import type { ImportIssue, ImportRecordResult, ImportResult } from '@/api/types'
 import type { ParsedSheet } from './excel'
 import type { PendingCustomField } from './importTransform'
 import { buildImportRecords } from './importTransform'
-import { applyEdits, excludeImportRows, fieldContext, fieldLabel, fieldValue, localImportIssues, mappingRule, optionsForField, pendingImportRecords, recordsForPreflight, valueText } from './importReview'
+import { applyEdits, excludeImportRows, fieldContext, fieldLabel, fieldValue, flattenDicts, localImportIssues, mappingRule, optionsForField, pendingImportRecords, recordsForPreflight, valueText } from './importReview'
 import type { ReviewSession } from './importReview'
 import { SaveNameDialog } from './SaveNameDialog'
 import { ImportRowEditor } from './ImportRowEditor'
@@ -24,6 +24,16 @@ interface Props {
   mappingId: ID | null; mappingName: string; pendingFields: PendingCustomField[];
   session: ReviewSession; onSessionChange: (session: ReviewSession) => void;
   onMappingSaved: (id: ID, name: string, rules: ValueRule[]) => void; active: boolean; onBack: () => void; onReset: () => void;
+}
+
+/** 配置内容相同的刷新不重跑，标准值或字段约束变化使旧预检立即失效。 */
+export function importPreflightConfiguration(dictionaries: DictNode[] | undefined, definitions: CustomFieldDef[] | undefined) {
+  return {
+    dictionaries: dictionaries == null ? null : flattenDicts(dictionaries).sort((a, b) => a.id - b.id)
+      .map(({ id, type, value, parentId, sortOrder }) => ({ id, type, value, parentId, sortOrder })),
+    definitions: definitions == null ? null : [...definitions].sort((a, b) => a.fieldKey.localeCompare(b.fieldKey))
+      .map(({ fieldKey, label, fieldType, required, options, dictionaryType }) => ({ fieldKey, label, fieldType, required, options, dictionaryType: dictionaryType ?? null })),
+  }
 }
 
 export function StepConfirm({ parsed, columnMap, valueRules, mappingId, mappingName, pendingFields, session, onSessionChange, onMappingSaved, active, onBack, onReset }: Props) {
@@ -50,8 +60,11 @@ export function StepConfirm({ parsed, columnMap, valueRules, mappingId, mappingN
   }).records.map((record) => [record.sourceRow!, record])), [parsed, columnMap, valueRules, today])
   const remaining = useMemo(() => pendingImportRecords(records, session), [records, session.completed, session.excluded])
   const previewRecords = useMemo(() => recordsForPreflight(remaining, transformed.problems), [remaining, transformed.problems])
-  const signature = JSON.stringify({ remaining, problems: transformed.problems, pendingFields, mappingId, retry })
-  const currentPreview = preview?.key === signature ? preview.result : null
+  const configurationReady = !dictionaries.isPending && !customs.isPending && !dictionaries.isError && !customs.isError
+  const configurationError = dictionaries.isError || customs.isError
+  const configuration = importPreflightConfiguration(dictionaries.data, customs.data)
+  const signature = JSON.stringify({ remaining, problems: transformed.problems, pendingFields, mappingId, retry, configuration })
+  const currentPreview = configurationReady && preview?.key === signature ? preview.result : null
   const defs: CustomFieldDef[] = useMemo(() => {
     const result = [...(customs.data ?? [])]
     pendingFields.forEach((f) => { if (!result.some((d) => d.fieldKey === f.fieldKey)) result.push({ ...f, id: 0, required: false, options: [], sortOrder: 0 }) })
@@ -59,8 +72,8 @@ export function StepConfirm({ parsed, columnMap, valueRules, mappingId, mappingN
   }, [customs.data, pendingFields])
 
   useEffect(() => {
-    if (!active || executing || uncertain || !remaining.length) return
     const version = ++generation.current
+    if (!active || executing || uncertain || !remaining.length || !configurationReady) return
     let cancelled = false
     setPreviewError('')
     const timer = window.setTimeout(async () => {
@@ -69,12 +82,12 @@ export function StepConfirm({ parsed, columnMap, valueRules, mappingId, mappingN
           ? await importer.mutateAsync({ mappingId, dryRun: true, records: previewRecords, pendingFields })
           : { mappingId, dryRun: true, added: 0, overwritten: 0, skipped: 0, details: [] }
         if (!cancelled && generation.current === version) setPreview({ key: signature, result })
-      } catch (error) { if (!cancelled) setPreviewError((error as Error).message || '预检失败，请重试') }
+      } catch (error) { if (!cancelled && generation.current === version) setPreviewError((error as Error).message || '预检失败，请重试') }
     }, 350)
     return () => { cancelled = true; window.clearTimeout(timer) }
     // signature 是完整请求的快照；mutation 对象变化不触发重新预检。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, signature, executing, uncertain])
+  }, [active, signature, executing, uncertain, configurationReady])
 
   const resultsByRow = new Map(currentPreview?.details.map((result) => [result.sourceRow, result]))
   const problemsByRow = new Map<number, typeof transformed.problems>()
@@ -147,10 +160,13 @@ export function StepConfirm({ parsed, columnMap, valueRules, mappingId, mappingN
   return <div className="space-y-4">
     <Card><CardContent className="space-y-3 pt-5">
       <div className="flex flex-wrap gap-6 text-sm"><span>可导入 <b>{ready.length}</b> 条</span><span>待处理 <b>{unresolved.length}</b> 条</span><span>已导入 <b>{completedCount}</b> 条</span>{excludedCount > 0 && <span>已移除 <b>{excludedCount}</b> 条</span>}
-        {!currentPreview && remaining.length > 0 && <span className="text-muted-foreground">{previewError || '正在重新预检…'}</span>}</div>
+        {!currentPreview && remaining.length > 0 && <span className="text-muted-foreground">{configurationError ? '标准选项加载失败，请重新加载后预检' : !configurationReady ? '正在加载标准选项…' : previewError || '正在重新预检…'}</span>}</div>
       <p className="text-xs text-muted-foreground">修正后自动重新预检；成功导入后从列表移除，剩余记录可继续修正或勾选删除。删除仅移出本次导入清单，不影响已有项目，可在本页恢复。待处理进度保留在当前页面。</p>
       {pendingFields.length > 0 && <p className="text-xs">待新增字段：{pendingFields.map((f) => `${f.label}（${{ text: '文本', number: '数字', date: '日期' }[f.fieldType]}）`).join('、')}</p>}
-      <div className="flex flex-wrap gap-2"><Button variant="outline" disabled={executing} onClick={() => { setUncertain(false); setPreviewError(''); setRetry((n) => n + 1) }}>重新预检</Button>
+      <div className="flex flex-wrap gap-2"><Button variant="outline" disabled={executing} onClick={() => {
+        if (configurationError) { void dictionaries.refetch(); void customs.refetch() }
+        setUncertain(false); setPreviewError(''); setRetry((n) => n + 1)
+      }}>重新预检</Button>
         <Button variant="outline" disabled={executing || !remaining.length} onClick={download}>下载未导入清单</Button>
         {excludedCount > 0 && <Button variant="outline" disabled={executing} onClick={() => {
           onSessionChange({ ...session, excluded: {} }); setSelected(new Set()); setFilter('all'); setIssueFilter(''); setPage(0)

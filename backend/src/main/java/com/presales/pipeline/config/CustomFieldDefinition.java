@@ -33,6 +33,9 @@ public class CustomFieldDefinition extends SoftDeletableEntity {
     @Column(name = "sort_order", nullable = false)
     private int sortOrder;
 
+    @Column(name = "dictionary_type", length = 64)
+    private String dictionaryType;
+
     protected CustomFieldDefinition() {
     }
 
@@ -83,4 +86,7 @@ public class CustomFieldDefinition extends SoftDeletableEntity {
     public void setSortOrder(int sortOrder) {
         this.sortOrder = sortOrder;
     }
+
+    public String getDictionaryType() { return dictionaryType; }
+    public void setDictionaryType(String dictionaryType) { this.dictionaryType = dictionaryType; }
 }

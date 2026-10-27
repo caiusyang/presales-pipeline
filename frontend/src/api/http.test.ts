@@ -12,6 +12,26 @@ afterEach(() => {
 })
 
 describe('HTTP API contract', () => {
+  it('uses CSRF-protected custom dictionary category/import APIs and preserves field dictionary links', async () => {
+    const fetchMock = vi.fn(async (path: string) => path === '/api/auth/csrf'
+      ? jsonResponse({ code: 0, data: { headerName: 'X-CSRF-TOKEN', token: 'dictionary-token' } })
+      : jsonResponse({ code: 0, data: { id: 1 } }))
+    vi.stubGlobal('fetch', fetchMock)
+    const { httpApi } = await import('./http')
+    await httpApi.listDictionaryCategories()
+    await httpApi.createDictionaryCategory({ type: 'custom_region', label: '区域', sortOrder: 10 })
+    await httpApi.updateDictionaryCategory(1, { type: 'custom_region', label: '客户区域', sortOrder: 20 })
+    const input = { type: 'custom_region', parentId: null, dryRun: true, records: [{ sourceRow: 2, value: '华东' }] }
+    await httpApi.importDictionaryValues(input)
+    await httpApi.createCustomField({ fieldKey: 'region', label: '区域', fieldType: 'option', required: false, options: [], dictionaryType: 'custom_region', sortOrder: 10 })
+    await httpApi.deleteDictionaryCategory(1)
+    const calls = fetchMock.mock.calls as unknown as [string, RequestInit][]
+    expect(calls.map(([path]) => path)).toEqual(['/api/dictionary-categories', '/api/auth/csrf', '/api/dictionary-categories', '/api/dictionary-categories/1', '/api/dictionaries/import', '/api/config/custom-fields', '/api/dictionary-categories/1'])
+    calls.slice(2).forEach(([, init]) => expect(new Headers(init.headers).get('X-CSRF-TOKEN')).toBe('dictionary-token'))
+    expect(JSON.parse(String(calls[4][1].body))).toEqual(input)
+    expect(JSON.parse(String(calls[5][1].body)).dictionaryType).toBe('custom_region')
+    expect(calls[6][1].method).toBe('DELETE')
+  })
   it('uses a distinct CSRF-protected endpoint for permanent deletion without falling back to soft deletion', async () => {
     const fetchMock = vi.fn(async (path: string) => {
       if (path === '/api/auth/csrf') return jsonResponse({ code: 0, data: { headerName: 'X-CSRF-TOKEN', token: 'csrf-permanent' } })

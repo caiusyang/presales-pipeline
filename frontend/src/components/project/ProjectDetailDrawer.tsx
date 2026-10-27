@@ -161,9 +161,47 @@ function ProductsTab({ records }: { records: ProjectProductRecord[] }) {
 
 // ---------------- 概览 ----------------
 
+export interface ProjectOverviewDraft {
+  baseline: ProjectInput
+  value: ProjectInput
+}
+
+export function sameProjectInput(a: ProjectInput, b: ProjectInput): boolean {
+  const snapshot = (input: ProjectInput) => JSON.stringify({
+    ...input,
+    customFields: Object.fromEntries(Object.entries(input.customFields ?? {}).sort(([first], [second]) => first.localeCompare(second))),
+  })
+  return snapshot(a) === snapshot(b)
+}
+
+/** 未编辑的表单跟随服务端刷新；有未保存修改时保留草稿和原基线以显示冲突提示。 */
+export function reconcileProjectOverviewDraft(current: ProjectOverviewDraft, latest: ProjectInput): ProjectOverviewDraft {
+  if (!sameProjectInput(current.value, current.baseline) || sameProjectInput(current.baseline, latest)) return current
+  return { baseline: latest, value: latest }
+}
+
+export function invalidProjectOptionValues(value: ProjectInput, definitions: CustomFieldDef[]) {
+  return definitions.filter((definition) => definition.fieldType === 'option')
+    .map((definition) => ({ label: definition.label, value: String(value.customFields?.[definition.fieldKey] ?? '').trim(), options: definition.options }))
+    .filter((field) => field.value !== '' && !field.options.includes(field.value))
+    .map(({ label, value }) => ({ label, value }))
+}
+
 function OverviewTab({ project, customDefs }: { project: Project; customDefs: CustomFieldDef[] }) {
-  const [value, setValue] = useState<ProjectInput>(() => projectToInput(project))
+  const [draft, setDraft] = useState<ProjectOverviewDraft>(() => {
+    const input = projectToInput(project)
+    return { baseline: input, value: input }
+  })
   const { update } = useProjectMutations()
+  const value = draft.value
+  const latest = projectToInput(project)
+  const dirty = !sameProjectInput(value, draft.baseline)
+  const refreshedWhileEditing = dirty && !sameProjectInput(draft.baseline, latest)
+  const invalidOptions = invalidProjectOptionValues(value, customDefs)
+
+  useEffect(() => {
+    setDraft((current) => reconcileProjectOverviewDraft(current, projectToInput(project)))
+  }, [project])
 
   const save = () => {
     const err = validateProjectInput(value, customDefs)
@@ -171,18 +209,31 @@ function OverviewTab({ project, customDefs }: { project: Project; customDefs: Cu
       toast.error(err)
       return
     }
-    update.mutate({ id: project.id, input: normalizeForSubmit(value, customDefs) })
+    if (invalidOptions.length) return toast.error('部分选项已调整，请重新选择标出的字段后保存')
+    update.mutate({ id: project.id, input: normalizeForSubmit(value, customDefs) }, {
+      onSuccess: (saved) => {
+        const baseline = projectToInput(saved)
+        setDraft((current) => ({ baseline, value: sameProjectInput(current.value, value) ? baseline : current.value }))
+      },
+    })
   }
 
   return (
     <div className="space-y-4">
-      <ProjectFormFields value={value} onChange={setValue} />
+      {refreshedWhileEditing && <div role="alert" className="space-y-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+        <p>项目数据已更新，已保留你的未保存修改。请核对当前字段后保存，或放弃编辑载入最新数据。</p>
+        <Button size="sm" variant="outline" onClick={() => setDraft({ baseline: latest, value: latest })}>放弃编辑并载入最新数据</Button>
+      </div>}
+      {invalidOptions.length > 0 && <div role="alert" className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+        {invalidOptions.map((field) => <p key={field.label}>「{field.label}」的当前值「{field.value}」已不在标准选项中，请重新选择。原值仍保留在编辑内容中。</p>)}
+      </div>}
+      <ProjectFormFields value={value} onChange={(next) => setDraft((current) => ({ ...current, value: next }))} />
       <div className="flex items-center justify-between gap-4 border-t pt-3">
         <div className="text-xs text-muted-foreground">
           创建于 {dayjs(project.createdAt).format('YYYY-MM-DD HH:mm')} · 更新于{' '}
           {dayjs(project.updatedAt).format('YYYY-MM-DD HH:mm')}
         </div>
-        <Button onClick={save} disabled={update.isPending}>
+        <Button onClick={save} disabled={update.isPending || invalidOptions.length > 0}>
           {update.isPending ? '保存中…' : '保存'}
         </Button>
       </div>

@@ -82,6 +82,10 @@ export function ProjectTable({
     if (key === 'track') return toOptions((trackQ.data ?? []).map((n) => n.value))
     if (key === 'solution') return toOptions(solutions.solutions.map((n) => n.value))
     if (key === 'subSolution') return toOptions((solutions.subMap.get(row.solution) ?? []).map((n) => n.value))
+    if (key.startsWith('custom.')) {
+      const def = customDefsQ.data?.find((field) => field.fieldKey === key.slice(7))
+      if (def?.fieldType === 'option') return toOptions(def.options)
+    }
     return null
   }
 

@@ -12,6 +12,11 @@ public record CustomFieldResponse(
         List<String> options,
         int sortOrder,
         LocalDateTime createdAt,
-        LocalDateTime updatedAt
+        LocalDateTime updatedAt,
+        String dictionaryType
 ) {
+    public CustomFieldResponse(Long id, String fieldKey, String label, String fieldType, boolean required, List<String> options,
+                               int sortOrder, LocalDateTime createdAt, LocalDateTime updatedAt) {
+        this(id, fieldKey, label, fieldType, required, options, sortOrder, createdAt, updatedAt, null);
+    }
 }

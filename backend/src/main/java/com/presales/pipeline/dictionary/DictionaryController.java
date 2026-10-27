@@ -3,6 +3,8 @@ package com.presales.pipeline.dictionary;
 import com.presales.pipeline.common.api.ApiResponse;
 import com.presales.pipeline.dictionary.dto.DictionaryNodeResponse;
 import com.presales.pipeline.dictionary.dto.DictionaryRequest;
+import com.presales.pipeline.dictionary.dto.DictionaryImportRequest;
+import com.presales.pipeline.dictionary.dto.DictionaryImportResponse;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -21,9 +23,11 @@ import java.util.List;
 public class DictionaryController {
 
     private final DictionaryService service;
+    private final DictionaryImportService imports;
 
-    public DictionaryController(DictionaryService service) {
+    public DictionaryController(DictionaryService service, DictionaryImportService imports) {
         this.service = service;
+        this.imports = imports;
     }
 
     @GetMapping
@@ -34,6 +38,11 @@ public class DictionaryController {
     @PostMapping
     public ApiResponse<DictionaryNodeResponse> create(@Valid @RequestBody DictionaryRequest request) {
         return ApiResponse.success("字典项已创建", service.create(request));
+    }
+
+    @PostMapping("/import")
+    public ApiResponse<DictionaryImportResponse> importValues(@Valid @RequestBody DictionaryImportRequest request) {
+        return ApiResponse.success(imports.execute(request));
     }
 
     @PutMapping("/{id}")
