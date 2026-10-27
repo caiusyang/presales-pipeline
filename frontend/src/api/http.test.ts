@@ -12,6 +12,24 @@ afterEach(() => {
 })
 
 describe('HTTP API contract', () => {
+  it('bulk deletion reuses authenticated single-project requests and reports individual failures', async () => {
+    const fetchMock = vi.fn(async (path: string) => {
+      if (path === '/api/auth/csrf') return jsonResponse({ code: 0, data: { headerName: 'X-XSRF-TOKEN', token: 'csrf-bulk' } })
+      if (path === '/api/projects/12') return jsonResponse({ code: 50300, message: '删除服务暂不可用' }, 503)
+      return jsonResponse({ code: 0, data: null })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const { httpApi } = await import('./http')
+    const { batchDeleteProjects } = await import('@/components/project/batchDeleteProjects')
+    const result = await batchDeleteProjects([7, 12], (id) => httpApi.deleteProject(id))
+    expect(result).toEqual({ deletedIds: [7], failures: [{ id: 12, message: '删除服务暂不可用' }] })
+    const requests = fetchMock.mock.calls as unknown as [string, RequestInit][]
+    expect(requests.map(([path]) => path)).toEqual(['/api/auth/csrf', '/api/projects/7', '/api/projects/12'])
+    requests.slice(1).forEach(([, init]) => {
+      expect(init.method).toBe('DELETE')
+      expect(new Headers(init.headers).get('X-XSRF-TOKEN')).toBe('csrf-bulk')
+    })
+  })
   it('maps backend PageData.items without losing projects', async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
       code: 0,

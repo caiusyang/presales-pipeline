@@ -3,6 +3,7 @@ import dayjs from 'dayjs'
 import { ArrowDown, ArrowUp, ArrowUpDown, Eye, RotateCcw, Trash2, Trophy } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Select, type SelectOption } from '@/components/ui/select'
 import {
@@ -26,6 +27,10 @@ interface Props {
   /** 可见列（已按用户顺序） */
   columns: PipelineColumn[]
   recycleBin: boolean
+  selectedIds: ReadonlySet<ID>
+  deleting: boolean
+  onSelectProject: (project: Project, selected: boolean) => void
+  onSelectPage: (selected: boolean) => void
   sortBy?: string
   sortDirection?: 'asc' | 'desc'
   onSort: (key: string) => void
@@ -45,6 +50,10 @@ export function ProjectTable({
   projects,
   columns,
   recycleBin,
+  selectedIds,
+  deleting,
+  onSelectProject,
+  onSelectPage,
   sortBy,
   sortDirection,
   onSort,
@@ -64,7 +73,7 @@ export function ProjectTable({
   const cascade = industryCascade(industryQ.data ?? [])
   const solutions = solutionCascade(solutionQ.data ?? [])
 
-  const isEditable = (key: string) => !recycleBin && !['revenueTotal', 'projectStatus', 'purchasedProducts'].includes(key)
+  const isEditable = (key: string) => !recycleBin && !deleting && !['revenueTotal', 'projectStatus', 'purchasedProducts'].includes(key)
 
   const dictOptionsFor = (key: string, row: Project): SelectOption[] | null => {
     const toOptions = (values: string[]) => values.map((v) => ({ value: v, label: v }))
@@ -176,13 +185,22 @@ export function ProjectTable({
     <Table>
       <TableHeader>
         <TableRow>
+          {!recycleBin && <TableHead className="w-10">
+            <Checkbox aria-label="选择当前页项目" disabled={deleting} checked={projects.every((project) => selectedIds.has(project.id))
+              ? true : projects.some((project) => selectedIds.has(project.id)) ? 'indeterminate' : false}
+              onCheckedChange={(checked) => onSelectPage(checked === true)} />
+          </TableHead>}
           {columns.map(renderHead)}
           <TableHead className="w-48 text-right">操作</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
         {projects.map((p) => (
-          <TableRow key={p.id} className="cursor-pointer" onClick={(e) => handleRowClick(p, e)}>
+          <TableRow key={p.id} className="cursor-pointer" data-state={!recycleBin && selectedIds.has(p.id) ? 'selected' : undefined} onClick={(e) => handleRowClick(p, e)}>
+            {!recycleBin && <TableCell onClick={(event) => event.stopPropagation()}>
+              <Checkbox aria-label={`选择项目 ${p.customerName} · ${p.projectName}`} disabled={deleting} checked={selectedIds.has(p.id)}
+                onCheckedChange={(checked) => onSelectProject(p, checked === true)} />
+            </TableCell>}
             {columns.map((col) => {
               const isEditing = editing?.id === p.id && editing.key === col.key
               const editable = isEditable(col.key)
@@ -230,7 +248,7 @@ export function ProjectTable({
                     <Eye className="h-3.5 w-3.5" />
                     详情
                   </Button>
-                  <Button variant="ghost" size="xs" onClick={() => onRequestDelete(p)}>
+                  <Button variant="ghost" size="xs" disabled={deleting} onClick={() => onRequestDelete(p)}>
                     <Trash2 className="h-3.5 w-3.5 text-destructive" />
                     删除
                   </Button>

@@ -46,6 +46,9 @@ export default function PipelinePage() {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<Project | null>(null)
   const [winTarget, setWinTarget] = useState<Project | null>(null)
+  const [selectedProjects, setSelectedProjects] = useState<Map<ID, Project>>(new Map())
+  const [batchTargets, setBatchTargets] = useState<Project[]>([])
+  const [deleteFailures, setDeleteFailures] = useState<{ project: Project; message: string }[]>([])
 
   // 关键字防抖 300ms
   useEffect(() => {
@@ -57,6 +60,12 @@ export default function PipelinePage() {
   useEffect(() => {
     setPage(0)
   }, [debouncedKeyword, industry, track, projectStatus, startMonth, endMonth, recycleBin, size])
+
+  // 分页及排序保留选择；改变筛选范围时清空，避免删除隐藏在旧筛选中的项目。
+  useEffect(() => {
+    setSelectedProjects(new Map())
+    setDeleteFailures([])
+  }, [keyword, industry, track, projectStatus, startMonth, endMonth, recycleBin, size])
 
   // ---------- 数据 ----------
   const query: ProjectListQuery = {
@@ -75,11 +84,38 @@ export default function PipelinePage() {
   const industryQ = useDictionaries('industry')
   const trackQ = useDictionaries('track')
   const customDefsQ = useCustomFieldDefs()
-  const { remove } = useProjectMutations()
+  const { remove, removeMany } = useProjectMutations()
 
   const total = projectsQ.data?.total ?? 0
   const items = projectsQ.data?.items ?? []
   const totalPages = Math.max(1, Math.ceil(total / size))
+  const deleting = remove.isPending || removeMany.isPending
+  const selectedIds = useMemo(() => new Set(selectedProjects.keys()), [selectedProjects])
+
+  useEffect(() => {
+    if (projectsQ.data && !projectsQ.isFetching && page >= totalPages) setPage(totalPages - 1)
+  }, [projectsQ.data, projectsQ.isFetching, page, totalPages])
+
+  const selectProjects = (projects: Project[], selected: boolean) => {
+    setSelectedProjects((current) => {
+      const next = new Map(current)
+      projects.forEach((project) => { if (selected) next.set(project.id, project); else next.delete(project.id) })
+      return next
+    })
+  }
+
+  const deleteSelected = async () => {
+    if (!batchTargets.length || deleting) return
+    const targets = [...batchTargets]
+    const result = await removeMany.mutateAsync(targets.map((project) => project.id))
+    setSelectedProjects((current) => {
+      const next = new Map(current)
+      result.deletedIds.forEach((id) => next.delete(id))
+      return next
+    })
+    setDeleteFailures(result.failures.map((failure) => ({ project: targets.find((project) => project.id === failure.id)!, message: failure.message })))
+    setBatchTargets([])
+  }
 
   // ---------- 列配置 ----------
   const availableColumns = useMemo(
@@ -216,6 +252,19 @@ export default function PipelinePage() {
         </div>
       )}
 
+      {!recycleBin && <div className="flex flex-wrap items-center gap-3 text-sm">
+        <span aria-live="polite">已选 {selectedProjects.size} 个项目</span>
+        <Button variant="destructive" disabled={!selectedProjects.size || deleting} onClick={() => setBatchTargets([...selectedProjects.values()])}>
+          <Trash2 className="h-4 w-4" />{removeMany.isPending ? '删除中…' : `批量删除 ${selectedProjects.size} 个项目`}
+        </Button>
+        {selectedProjects.size > 0 && <Button variant="ghost" disabled={deleting} onClick={() => setSelectedProjects(new Map())}>清空选择</Button>}
+        <span className="text-xs text-muted-foreground">支持跨页勾选，表头全选当前页；删除后可在回收站恢复。</span>
+      </div>}
+      {!recycleBin && deleteFailures.length > 0 && <div role="alert" className="space-y-1 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm">
+        <p>以下项目未完成删除，请核对后重试：</p>
+        {deleteFailures.map(({ project, message }) => <p key={project.id} className="text-xs text-destructive">{project.customerName} · {project.projectName}：{message}</p>)}
+      </div>}
+
       {/* ---------- 表格 ---------- */}
       <div className="rounded-md border">
         {projectsQ.isLoading ? (
@@ -234,6 +283,10 @@ export default function PipelinePage() {
             projects={items}
             columns={visibleColumns}
             recycleBin={recycleBin}
+            selectedIds={selectedIds}
+            deleting={deleting || projectsQ.isFetching || keyword !== debouncedKeyword}
+            onSelectProject={(project, selected) => selectProjects([project], selected)}
+            onSelectPage={(selected) => selectProjects(items, selected)}
             sortBy={sort.sortBy}
             sortDirection={sort.sortDirection}
             onSort={toggleSort}
@@ -296,9 +349,20 @@ export default function PipelinePage() {
         destructive
         loading={remove.isPending}
         onConfirm={() => {
-          if (deleteTarget) remove.mutate(deleteTarget.id)
+          const target = deleteTarget
+          if (target) remove.mutate(target.id, { onSuccess: () => selectProjects([target], false) })
           setDeleteTarget(null)
         }}
+      />
+      <ConfirmDialog
+        open={batchTargets.length > 0}
+        onOpenChange={(open) => !open && setBatchTargets([])}
+        title="批量删除项目"
+        description={`确定将所选 ${batchTargets.length} 个项目移入回收站吗？${batchTargets.slice(0, 5).map((project) => `「${project.customerName} · ${project.projectName}」`).join('、')}${batchTargets.length > 5 ? '等项目' : ''}。删除后可在回收站恢复，收入明细和进展记录会保留。`}
+        confirmText={`确认删除 ${batchTargets.length} 个项目`}
+        destructive
+        loading={removeMany.isPending}
+        onConfirm={() => { void deleteSelected().catch(() => {}) }}
       />
     </div>
   )

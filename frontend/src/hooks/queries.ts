@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { api } from '@/api'
+import { batchDeleteProjects } from '@/components/project/batchDeleteProjects'
 import type {
   DictNode,
   ExportColumn,
@@ -82,12 +83,24 @@ export function useProjectMutations() {
     onSuccess: () => { invalidate(); toast.success('已删除（移入回收站）') },
     onError: onErr,
   })
+  const removeMany = useMutation({
+    mutationFn: (ids: ID[]) => batchDeleteProjects(ids, (id) => api.deleteProject(id)),
+    onSuccess: (result) => {
+      if (result.failures.length) {
+        toast.warning(`已删除 ${result.deletedIds.length} 个项目，${result.failures.length} 个未完成，请查看失败原因`)
+      } else {
+        toast.success(`已将 ${result.deletedIds.length} 个项目移入回收站`)
+      }
+    },
+    onSettled: invalidate,
+    onError: onErr,
+  })
   const restore = useMutation({
     mutationFn: (id: ID) => api.restoreProject(id),
     onSuccess: () => { invalidate(); toast.success('已恢复') },
     onError: onErr,
   })
-  return { create, update, remove, restore }
+  return { create, update, remove, removeMany, restore }
 }
 
 // ---------------- 进展 ----------------
