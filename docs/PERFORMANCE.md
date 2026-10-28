@@ -37,4 +37,4 @@
 mvn -Dtest=PerformanceBaselineTest -Dbenchmark=true -Dbenchmark.async=true -Dbenchmark.label=after -Dbenchmark.output=/tmp/presales-baseline-after.json test
 ```
 
-普通测试跳过大样本。正式MySQL迁移由隔离CI测试，性能与SQL恢复演练仍待环境，不能把迁移通过等同性能通过。
+普通测试跳过大样本。隔离CI的真实MySQL8迁移、结构校验及应用启动已通过；性能与SQL恢复演练仍待环境，不能把迁移通过等同性能通过。

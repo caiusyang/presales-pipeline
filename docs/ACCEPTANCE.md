@@ -12,6 +12,7 @@
 | Node 备份恢复预检测试 | 1项通过，包含错误引用与损坏任务JSON |
 | HTTP/演示生产构建 | 均通过 TypeScript + Vite |
 | 依赖审计 | npm audit 0 vulnerabilities |
+| GitHub CI / MySQL8 | 代码提交 `62f0716` 三个作业全部通过：frontend、backend、mysql-migrations |
 | 三份交付工作簿 | artifact-tool生成、重算、检查、渲染目检及导出后回读通过；无公式错误；预算0为数值，方案JSON有效 |
 | 新模板实际解析 | 公有云/HCS各一项自动测试，核对日期、续行、预算0、方案JSON、需求不误判已购 |
 
@@ -38,7 +39,9 @@ Chrome隔离来源 `127.0.0.1:5175`，新演示25个项目。可见逾期红框�
 
 ## 迁移与遗留
 
-新增V7—V14，历史迁移不改写。CI另设专用空MySQL8库测试，从V6样本升级，核对项目数/预算/跟进历史/方案关系/异常原文/产品/收入，禁止清空已有库。CI实际结果在同步后核对；本地没有MySQL，不把H2建表当作Flyway验证。
+新增V7—V14，历史迁移不改写。CI专用空MySQL8库从V6样本升级，核对项目数/预算/跟进历史/方案关系/异常原文/产品/收入，随后真实启动应用执行 Hibernate schema validate、产品目录初始化及全量备份，已通过。禁止清空已有库。本地没有MySQL，不把H2建表当作Flyway验证。结果：[CI 40656541082](https://github.com/caiusyang/presales-pipeline/actions/runs/40656541082)。
+
+首轮CI发现并修复三处本机环境未暴露的问题：Linux纳秒时钟与数据库微秒精度造成返回值不一致（统一截到微秒，保留无变化测试原断言）；干净环境缺Node测试类型（显式锁入开发依赖）；旧收入月份CHAR(7)与JPA默认VARCHAR不一致（实体显式CHAR映射，不改历史迁移、不关闭schema validate）。修复后重跑全部通过。
 
 真实HCS协议、真实字段映射、网络同步、调度和端到端联调按用户确认暂留；模拟人员域测试不是HCS接入。正式4vCPU/8GB MySQL性能、慢查询、大文件浏览器响应、SQL备份恢复实操未完成。详细耗时和边界见 [性能报告](PERFORMANCE.md)，后续HCS条件见 [对接说明](HCS_INTEGRATION.md)。
 
