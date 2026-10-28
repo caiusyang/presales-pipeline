@@ -16,6 +16,43 @@ import java.util.Map;
 @Entity
 @Table(name = "projects")
 public class Project extends SoftDeletableEntity {
+    @jakarta.persistence.Version @Column(name="row_version",nullable=false,columnDefinition="bigint default 0") private long rowVersion;
+    public long getRowVersion(){return rowVersion;}
+    @Column(name="hcs_opportunity_id",unique=true,length=128) private String hcsOpportunityId;
+    @Column(name="hcs_status") private String hcsStatus;
+    @Column(name="last_sync_at") private java.time.LocalDateTime lastSyncAt;
+    public String getHcsOpportunityId(){return hcsOpportunityId;}
+    public void setHcsOpportunityId(String value){hcsOpportunityId=value;}
+    public String getHcsStatus(){return hcsStatus;}
+    public void setHcsStatus(String value){hcsStatus=value;}
+    public java.time.LocalDateTime getLastSyncAt(){return lastSyncAt;}
+    public void setLastSyncAt(java.time.LocalDateTime value){lastSyncAt=value;}
+    @jakarta.persistence.OneToMany(mappedBy="project",cascade=jakarta.persistence.CascadeType.ALL,orphanRemoval=true) @org.hibernate.annotations.BatchSize(size=100) @jakarta.persistence.OrderBy("id ASC")
+    private List<com.presales.pipeline.people.ProjectPerson> personLinks=new ArrayList<>();
+    public List<com.presales.pipeline.people.ProjectPerson> personLinks(){return personLinks;}
+    public List<Long> getResponsibleIds(){return personLinks.stream().filter(r->r.source.equals("manual")).map(r->r.person.getId()).distinct().sorted().toList();}
+    public record Responsible(Long personId,String name,String employeeNo,String account,String source,String role){}
+    public List<Responsible> getResponsibles(){return personLinks.stream().map(r->new Responsible(r.person.getId(),r.person.getName(),r.person.getEmployeeNo(),r.person.getAccount(),r.source,r.role)).toList();}
+    @jakarta.persistence.OneToMany(mappedBy="project",cascade=jakarta.persistence.CascadeType.ALL,orphanRemoval=true)
+    @org.hibernate.annotations.BatchSize(size=100)
+    @jakarta.persistence.OrderBy("id ASC")
+    private List<com.presales.pipeline.solution.ProjectSolution> solutionLinks=new ArrayList<>();
+    public List<com.presales.pipeline.solution.ProjectSolution> solutionLinks(){return solutionLinks;}
+    public List<com.presales.pipeline.solution.SolutionSelection> getSolutions(){
+        Map<String,java.util.Set<String>> grouped=new java.util.TreeMap<>();
+        for(var link:solutionLinks){var children=grouped.computeIfAbsent(link.solution.getValue(),key->new java.util.TreeSet<>());if(link.subSolution!=null)children.add(link.subSolution.getValue());}
+        if(grouped.isEmpty()&&solution!=null&&!solution.isBlank())grouped.put(solution,subSolution==null||subSolution.isBlank()?java.util.Set.of():java.util.Set.of(subSolution));
+        return grouped.entrySet().stream().map(e->new com.presales.pipeline.solution.SolutionSelection(e.getKey(),List.copyOf(e.getValue()))).toList();
+    }
+    @Column(name="last_follow_up_at") private java.time.LocalDateTime lastFollowUpAt;
+    @Column(name="next_action_date") private java.time.LocalDate nextActionDate;
+    @Column(name="next_action_note",columnDefinition="text") private String nextActionNote;
+    public java.time.LocalDateTime getLastFollowUpAt(){return lastFollowUpAt;}
+    public void touchFollowUp(){lastFollowUpAt=java.time.LocalDateTime.now(com.presales.pipeline.common.config.BusinessTime.ZONE);}
+    public java.time.LocalDate getNextActionDate(){return nextActionDate;}
+    public void setNextActionDate(java.time.LocalDate value){nextActionDate=value;}
+    public String getNextActionNote(){return nextActionNote;}
+    public void setNextActionNote(String value){nextActionNote=value;}
 
     @Column(name = "external_id", length = 128, unique = true)
     private String externalId;
@@ -42,6 +79,9 @@ public class Project extends SoftDeletableEntity {
     private List<String> purchasedProducts = new ArrayList<>();
 
     private String track;
+    @Column(name="security_direction") private String securityDirection;
+    public String getSecurityDirection(){return securityDirection;}
+    public void setSecurityDirection(String value){securityDirection=value;}
 
     private String industry;
 

@@ -13,7 +13,7 @@ import java.util.Set;
 @Service
 public class DictionaryCategoryService {
     public static final Set<String> CHILD_TYPES = Set.of("sub_industry", "sub_solution", "product");
-    public static final Set<String> BUILT_IN_TYPES = Set.of("track", "industry", "solution", "sub_industry", "sub_solution", "product");
+    public static final Set<String> BUILT_IN_TYPES = Set.of("track", "industry", "solution", "sub_industry", "sub_solution", "product", "security_direction");
     private final DictionaryCategoryRepository categories;
     private final DictionaryRepository items;
     private final CustomFieldDefinitionRepository fields;
@@ -25,8 +25,8 @@ public class DictionaryCategoryService {
 
     @Transactional
     public void initialize() {
-        List<String> types = List.of("track", "industry", "solution");
-        Map<String, String> labels = Map.of("track", "赛道", "industry", "行业", "solution", "解决方案");
+        List<String> types = List.of("track", "industry", "solution", "security_direction");
+        Map<String, String> labels = Map.of("track", "赛道", "industry", "行业", "solution", "解决方案", "security_direction", "安全方向");
         for (int i = 0; i < types.size(); i++) {
             String type = types.get(i);
             if (categories.findByType(type).isPresent()) continue;
@@ -36,6 +36,7 @@ public class DictionaryCategoryService {
         }
         items.findAllByDeletedFalseOrderByTypeAscSortOrderAscIdAsc().stream().map(DictionaryItem::getType).distinct()
                 .filter(type -> !BUILT_IN_TYPES.contains(type)).forEach(this::ensureLegacyCategory);
+        for(String value:List.of("HCS","公有云"))if(items.findAllByTypeAndDeletedFalseOrderBySortOrderAscIdAsc("track").stream().noneMatch(item->item.getValue().equals(value))){var item=new DictionaryItem();item.setType("track");item.setValue(value);item.setSortOrder(value.equals("HCS")?10:20);items.save(item);}
     }
 
     @Transactional(readOnly = true)

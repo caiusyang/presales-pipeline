@@ -157,6 +157,26 @@ function normalizeMatrix(raw: RevenueMatrix): RevenueMatrix {
 }
 
 export const httpApi: ApiClient = {
+  listPeople: () => req('/config/people'),
+  savePerson: (input, id) => req(`/config/people${id ? `/${id}` : ''}`, { method: id ? 'PUT' : 'POST', body: JSON.stringify(input) }),
+  matchPeople: (input) => req('/config/people/match', { method: 'POST', body: JSON.stringify(input) }),
+  startPeopleImport: (input) => req('/config/people/import', { method: 'POST', body: JSON.stringify(input) }),
+  getSolutionStats: () => req('/stats/solutions'),
+  listProductCatalog: () => req('/config/products'),
+  createProduct: (input) => req('/config/products', { method: 'POST', body: JSON.stringify(input) }),
+  updateProduct: (id, input) => req(`/config/products/${id}`, { method: 'PUT', body: JSON.stringify(input) }),
+  getMigrationIssues: () => req('/migration-issues'),
+  previewProgressRepairs: (page = 0) => req(`/progress/repair${qs({ page, size: 100 })}`),
+  startProgressRepairJob: (input) => req('/progress/repair/jobs', { method: 'POST', body: JSON.stringify(input) }),
+  completeAction: (id, input) => req(`/projects/${id}/complete-action`, { method: 'POST', body: JSON.stringify(input) }),
+  listJobs: () => req('/jobs'),
+  getJob: (id) => req(`/jobs/${id}`),
+  getJobItems: (id, page = 0) => req(`/jobs/${id}/items${qs({ page, size: 100 })}`),
+  getJobResult: (id) => req(`/jobs/${id}/result`),
+  retryJob: (id, requestId) => req(`/jobs/${id}/retry`, { method: 'POST', body: JSON.stringify({ requestId }) }),
+  startProjectBatch: (input) => req('/projects/batch', { method: 'POST', body: JSON.stringify(input) }),
+  startImportJob: (input) => req('/import/jobs', { method: 'POST', body: JSON.stringify(input) }),
+  startExportJob: (input) => req('/export/jobs', { method: 'POST', body: JSON.stringify(input) }),
   // ---------------- 项目 ----------------
   listProjects: async (q: ProjectListQuery) => {
     const data = await req<PageWire<Project>>(`/projects${qs({ ...q, size: q.size ?? 50 })}`)

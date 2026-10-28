@@ -43,7 +43,7 @@ import {
   useSaveRevenues,
 } from '@/hooks/queries'
 import { fmtAmount, isValidMonth } from '@/lib/format'
-import { PRODUCT_CATALOG } from '@/lib/products'
+import { PRODUCT_CATALOG, productName } from '@/lib/products'
 import { cn } from '@/lib/utils'
 import type {
   ChangeLog,
@@ -126,7 +126,7 @@ function ProductsTab({ records }: { records: ProjectProductRecord[] }) {
   return (
     <div className="space-y-3">
       <div className="text-sm text-muted-foreground">
-        产品目录固定为 {PRODUCT_CATALOG.length} 项。已购产品会在项目产品关系表中保存独立记录。
+        产品目录共 {PRODUCT_CATALOG.length} 项，可在配置页维护。拥有情况独立于方案推荐，停用产品保留历史记录。
       </div>
       <div className="overflow-hidden rounded-md border">
         <Table>
@@ -142,7 +142,7 @@ function ProductsTab({ records }: { records: ProjectProductRecord[] }) {
               const record = byCode.get(product.toLowerCase())
               return (
                 <TableRow key={product}>
-                  <TableCell className="font-medium">{product}</TableCell>
+                  <TableCell className="font-medium">{productName(product)}</TableCell>
                   <TableCell>
                     <Badge variant={record ? 'success' : 'secondary'}>{record ? '已购' : '未购'}</Badge>
                   </TableCell>
@@ -227,6 +227,7 @@ function OverviewTab({ project, customDefs }: { project: Project; customDefs: Cu
       {invalidOptions.length > 0 && <div role="alert" className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
         {invalidOptions.map((field) => <p key={field.label}>「{field.label}」的当前值「{field.value}」已不在标准选项中，请重新选择。原值仍保留在编辑内容中。</p>)}
       </div>}
+      <p className="rounded border bg-muted/40 p-3 text-sm">HCS 状态（独立只读）：{project.hcsStatus || '未同步'} · 最近同步：{project.lastSyncAt || '尚未接入'}。本地售前状态由本平台维护，不随 HCS 状态改变。</p>
       <ProjectFormFields value={value} onChange={(next) => setDraft((current) => ({ ...current, value: next }))} />
       <div className="flex items-center justify-between gap-4 border-t pt-3">
         <div className="text-xs text-muted-foreground">
@@ -268,7 +269,7 @@ function ProgressTab({ projectId, logs }: { projectId: ID; logs: ProgressLog[] }
     <div className="space-y-5">
       <div className="space-y-2 rounded-md border p-3">
         <div className="flex items-center gap-2">
-          <Label className="shrink-0">日期</Label>
+          <Label className="shrink-0">进展日期</Label>
           <Input type="date" value={logDate} onChange={(e) => setLogDate(e.target.value)} className="w-44" />
         </div>
         <Textarea
@@ -293,7 +294,7 @@ function ProgressTab({ projectId, logs }: { projectId: ID; logs: ProgressLog[] }
             <div key={log.id} className="relative">
               <span className="absolute -left-[27px] top-1.5 h-2.5 w-2.5 rounded-full border-2 border-primary bg-background" />
               <div className="flex items-center gap-2">
-                <Badge variant="secondary">{dayjs(log.logDate).format('YYYY-MM-DD')}</Badge>
+                <Badge variant="secondary">进展日期 {log.logDate}</Badge>
                 <Button
                   variant="ghost"
                   size="icon-sm"
@@ -305,6 +306,7 @@ function ProgressTab({ projectId, logs }: { projectId: ID; logs: ProgressLog[] }
                 </Button>
               </div>
               <p className="mt-1 whitespace-pre-wrap text-sm">{log.content}</p>
+              <p className="mt-1 text-xs text-muted-foreground">录入时间 {dayjs(log.createdAt).format('YYYY-MM-DD HH:mm:ss')}</p>
             </div>
           ))}
         </div>

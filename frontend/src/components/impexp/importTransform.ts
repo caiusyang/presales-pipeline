@@ -2,7 +2,8 @@ import type { CustomFieldType, MonthStr, ProjectInput, ValueRule } from '@/types
 import type { ImportRecordInput } from '@/api/types'
 import { PROJECT_FIELD_LABELS, REQUIRED_PROJECT_FIELDS } from '@/lib/fields'
 import { validateSecurityBudget } from '@/components/project/project-utils'
-import { isValidMonth, parseProgressText } from '@/lib/format'
+import { isValidMonth } from '@/lib/format'
+import { parseProgressCell } from '@/lib/progressDate'
 import { normalizeProductCode, PRODUCT_CATALOG, type ProductCode } from '@/lib/products'
 
 // ============================================================
@@ -214,13 +215,14 @@ export interface TransformParams {
   rows: string[][]
   columnMap: Record<string, string>
   valueRules: ValueRule[]
-  /** 进展无日期时的兜底日期（今天，YYYY-MM-DD） */
+  /** 本次业务日期，仅保留给旧调用方；不作为进展兜底日期 */
   today: string
+  defaultYear?: number
   /** 第一条数据在原 Excel 中的 1-based 行号 */
   dataStartRow?: number
 }
 
-export function buildImportRecords({ headers, rows, columnMap, valueRules, today, dataStartRow = 2 }: TransformParams): TransformOutput {
+export function buildImportRecords({ headers, rows, columnMap, valueRules, defaultYear, dataStartRow = 2 }: TransformParams): TransformOutput {
   // 列名 → 列下标（重名取第一个）
   const colIndex = new Map<string, number>()
   headers.forEach((h, i) => {
@@ -244,6 +246,7 @@ export function buildImportRecords({ headers, rows, columnMap, valueRules, today
     const progress: { logDate: string; content: string }[] = []
     const purchasedProducts = new Set<ProductCode>()
     let hasProductColumn = false
+    const sourceValues = new Map<string, { value: string; idx: number }>()
 
     /** 写字段（custom. 入 customFields）；overwrite=false 时仅填空值（default 规则语义） */
     const setField = (key: string, value: string, overwrite: boolean) => {
@@ -263,6 +266,9 @@ export function buildImportRecords({ headers, rows, columnMap, valueRules, today
         if (cur != null && String(cur).trim() !== '') return
       }
       if (key.startsWith(CUSTOM_PREFIX)) customFields[key.slice(CUSTOM_PREFIX.length)] = value
+      else if (key === 'solutions') {
+        try { fields[key] = JSON.parse(value) } catch { fields[key] = value; problems.push({ excelRow, field: 'solutions', message: '方案集合需使用保留父子关系的 JSON 数组，请逐行修正或使用单方案模板' }) }
+      }
       else if (key === 'securityBudget') fields[key] = normalizeNumberValue(value) ?? value
       else fields[key] = value
     }
@@ -279,11 +285,9 @@ export function buildImportRecords({ headers, rows, columnMap, valueRules, today
       }
       if (target === PROGRESS_TARGET) {
         if (raw) {
-          const entries = parseProgressText(raw, today)
-          if (entries.some((entry) => normalizeDateValue(entry.logDate) !== entry.logDate)) {
-            problems.push({ excelRow, field: `source:${idx}`, message: `进展列「${headers[idx]}」包含无效日期，请修正` })
-          }
-          progress.push(...entries.filter((entry) => normalizeDateValue(entry.logDate) === entry.logDate))
+          const parsed = parseProgressCell(raw, defaultYear)
+          for (const issue of parsed.issues) problems.push({ excelRow, field: `source:${idx}`, message: `进展列「${headers[idx]}」第 ${issue.line} 段：${issue.message}（${issue.text}）` })
+          progress.push(...parsed.entries)
         }
         continue
       }
@@ -295,10 +299,21 @@ export function buildImportRecords({ headers, rows, columnMap, valueRules, today
           problems.push({ excelRow, field: `source:${idx}`, message: `收入列「${headers[idx]}」数值非法：「${raw}」，请修正后导入` })
           continue
         }
-        revenues.push({ month, amount: num })
+        const existing = revenues.find((cell) => cell.month === month)
+        if (existing && existing.amount !== num) problems.push({ excelRow, field: `source:${idx}`, message: `多列映射到 ${month} 收入且值不一致，请修正原始单元格或字段映射` })
+        else if (!existing) revenues.push({ month, amount: num })
         continue
       }
       if (!raw) continue
+      const pending = parsePendingField(target)
+      const key = pending ? `${CUSTOM_PREFIX}${pending.fieldKey}` : target
+      const value = key === 'securityBudget' || pending?.fieldType === 'number' ? normalizeNumberValue(raw) ?? raw : raw
+      const previous = sourceValues.get(key)
+      if (previous && previous.value !== value) {
+        problems.push({ excelRow, field: `source:${idx}`, message: `「${headers[previous.idx]}」与「${headers[idx]}」映射到同一字段但值冲突，请修正原始单元格或字段映射` })
+        continue
+      }
+      sourceValues.set(key, { value, idx })
       setField(target, raw, true)
     }
 

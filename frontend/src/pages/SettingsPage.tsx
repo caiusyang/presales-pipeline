@@ -4,6 +4,10 @@ import { MappingManager } from '@/components/settings/MappingManager'
 import { TemplateManager } from '@/components/settings/TemplateManager'
 import { CustomFieldManager } from '@/components/settings/CustomFieldManager'
 import { BackupPanel } from '@/components/settings/BackupPanel'
+import { ProgressRepairManager } from '@/components/settings/ProgressRepairManager'
+import { ProductCatalogManager } from '@/components/settings/ProductCatalogManager'
+import { MigrationIssues } from '@/components/settings/MigrationIssues'
+import { PeopleManager } from '@/components/settings/PeopleManager'
 
 export default function SettingsPage() {
   return (
@@ -15,12 +19,17 @@ export default function SettingsPage() {
         </p>
       </header>
       <Tabs defaultValue="dict">
-        <TabsList>
+        <TabsList className="h-auto flex-wrap">
           <TabsTrigger value="dict">字典管理</TabsTrigger>
           <TabsTrigger value="mapping">导入映射</TabsTrigger>
           <TabsTrigger value="template">导出模板</TabsTrigger>
           <TabsTrigger value="fields">自定义字段</TabsTrigger>
           <TabsTrigger value="backup">数据备份</TabsTrigger>
+          <TabsTrigger value="progress-repair">进展日期修复</TabsTrigger>
+          <TabsTrigger value="products">产品目录</TabsTrigger>
+          <TabsTrigger value="migration">迁移待处理</TabsTrigger>
+          <TabsTrigger value="people">责任人库</TabsTrigger>
+          <TabsTrigger value="hcs">HCS 接入</TabsTrigger>
         </TabsList>
         <TabsContent value="dict">
           <DictManager />
@@ -37,6 +46,11 @@ export default function SettingsPage() {
         <TabsContent value="backup">
           <BackupPanel />
         </TabsContent>
+        <TabsContent value="progress-repair"><ProgressRepairManager /></TabsContent>
+        <TabsContent value="products"><ProductCatalogManager /></TabsContent>
+        <TabsContent value="migration"><MigrationIssues /></TabsContent>
+        <TabsContent value="people"><PeopleManager /></TabsContent>
+        <TabsContent value="hcs"><p className="rounded border p-4 text-sm">真实 HCS 接口按你的决定暂时遗留，定时同步未开启，也不会按名称自动创建或覆盖项目。机会点绑定、独立状态字段和责任人来源已预留；需补充 API、鉴权、字段／状态、分页和限流资料后才能进行真实联调。</p></TabsContent>
       </Tabs>
     </div>
   )

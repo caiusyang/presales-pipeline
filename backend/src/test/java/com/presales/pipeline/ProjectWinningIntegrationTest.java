@@ -133,7 +133,7 @@ class ProjectWinningIntegrationTest {
                         .content(objectMapper.writeValueAsString(
                                 new DictionaryPayload("product", "其他产品", subSolutionId, 30))))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("已购产品只能是")));
+                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("产品不在目录中")));
 
         mockMvc.perform(get("/api/projects").param("projectStatus", "方案设计"))
                 .andExpect(status().isOk())

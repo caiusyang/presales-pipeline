@@ -101,10 +101,10 @@ describe('导入问题修正', () => {
     expect(corrected.fields.customerName).toBe('单行客户')
     expect(corrected.fields.projectStatus).toBe('方案引导')
   })
-  it('同名细分方案下的产品不会跨解决方案匹配', () => {
-    expect(optionsForField('purchasedProducts', { solution: '方案甲', subSolution: '同名细分' }, dictionaries, [])).toEqual(['WAF'])
+  it('已购产品独立于方案推荐产品，切换方案不拒绝拥有记录', () => {
+    expect(optionsForField('purchasedProducts', { solution: '方案甲', subSolution: '同名细分' }, dictionaries, [])).toEqual(expect.arrayContaining(['WAF', 'HSS']))
     const issues = validateImportRecord({ ...record, fields: { ...record.fields, solution: '方案甲', subSolution: '同名细分', purchasedProducts: ['HSS'] } }, dictionaries, [])
-    expect(issues.some((i) => i.field === 'purchasedProducts')).toBe(true)
+    expect(issues.some((i) => i.field === 'purchasedProducts')).toBe(false)
   })
   it('中标缺项及收入和进展格式问题均参与预检', () => {
     const issues = validateImportRecord({ ...record, fields: { ...record.fields, projectStatus: '中标' }, revenues: [{ month: '2026-13', amount: -1 }], progress: [{ logDate: '2026-02-30', content: '' }] }, [], [])

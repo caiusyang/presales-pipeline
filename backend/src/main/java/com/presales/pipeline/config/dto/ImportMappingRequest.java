@@ -10,6 +10,8 @@ import java.util.Map;
 public record ImportMappingRequest(
         @NotBlank @Size(max = 255) String name,
         @NotNull Map<String, Object> columnMap,
-        @NotNull List<Map<String, Object>> valueRules
+        @NotNull List<Map<String, Object>> valueRules,
+        String applicableTrack
 ) {
+    public ImportMappingRequest(String name,Map<String,Object> columnMap,List<Map<String,Object>> valueRules){this(name,columnMap,valueRules,null);}
 }

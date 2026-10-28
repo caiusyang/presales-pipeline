@@ -12,6 +12,7 @@ const RevenuePage = lazy(() => import('@/pages/RevenuePage'))
 const ImportPage = lazy(() => import('@/pages/ImportPage'))
 const ExportPage = lazy(() => import('@/pages/ExportPage'))
 const SettingsPage = lazy(() => import('@/pages/SettingsPage'))
+const SolutionPage = lazy(() => import('@/pages/SolutionPage'))
 
 function PageLoading() {
   return (
@@ -35,6 +36,7 @@ function AuthenticatedApp() {
         <Route path="/import" element={<Suspense fallback={<PageLoading />}><ImportPage /></Suspense>} />
         <Route path="/export" element={<Suspense fallback={<PageLoading />}><ExportPage /></Suspense>} />
         <Route path="/settings" element={<Suspense fallback={<PageLoading />}><SettingsPage /></Suspense>} />
+        <Route path="/solutions" element={<Suspense fallback={<PageLoading />}><SolutionPage /></Suspense>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

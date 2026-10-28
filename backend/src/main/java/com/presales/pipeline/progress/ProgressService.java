@@ -41,7 +41,7 @@ public class ProgressService {
 
     @Transactional
     public ProgressResponse create(ProgressCreateRequest request) {
-        Project project = projectService.getActiveEntity(request.projectId());
+        Project project = projectService.getActiveEntityForUpdate(request.projectId());
         String content = request.content().trim();
         ProgressLog log = repository.save(new ProgressLog(project, request.logDate(), content));
         changeLogService.log(project, "progress." + log.getId(), null,
@@ -52,6 +52,7 @@ public class ProgressService {
     @Transactional
     public ProgressLog addIfAbsent(Project project, LocalDate date, String content, String source) {
         String normalized = content.trim();
+        if(com.presales.pipeline.importing.ImportBatchLookup.fresh(project)&&com.presales.pipeline.importing.ImportBatchLookup.current().progress().getOrDefault(project.getId(),java.util.Set.of()).contains(com.presales.pipeline.importing.ImportBatchLookup.progressKey(date,normalized)))return null;
         if (repository.existsByProjectIdAndLogDateAndContentAndDeletedFalse(project.getId(), date, normalized)) {
             return null;
         }
@@ -65,7 +66,7 @@ public class ProgressService {
     public void delete(Long id) {
         ProgressLog log = repository.findByIdAndDeletedFalse(id)
                 .orElseThrow(() -> BusinessException.notFound("进展记录不存在"));
-        projectService.getActiveEntity(log.getProject().getId());
+        projectService.getActiveEntityForUpdate(log.getProject().getId());
         changeLogService.log(log.getProject(), "progress." + id,
                 log.getLogDate() + "：" + log.getContent(), null, ChangeLogService.SOURCE_MANUAL);
         log.setDeleted(true);
@@ -75,7 +76,7 @@ public class ProgressService {
     public ProgressResponse restore(Long id) {
         ProgressLog log = repository.findById(id)
                 .orElseThrow(() -> BusinessException.notFound("进展记录不存在"));
-        projectService.getActiveEntity(log.getProject().getId());
+        projectService.getActiveEntityForUpdate(log.getProject().getId());
         if (log.isDeleted()) {
             log.setDeleted(false);
             changeLogService.log(log.getProject(), "progress." + id, null,

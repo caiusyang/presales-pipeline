@@ -96,7 +96,7 @@ public class RevenueService {
             if (!uniqueCells.add(cellKey)) {
                 throw BusinessException.badRequest("同一批次中存在重复收入单元格：" + cellKey);
             }
-            Project project = projectService.getActiveEntity(entry.projectId());
+            Project project = projectService.getActiveEntityForUpdate(entry.projectId());
             Mutation mutation = upsert(project, month, entry.amount(), ChangeLogService.SOURCE_MANUAL);
             switch (mutation) {
                 case CREATED -> created++;

@@ -35,6 +35,10 @@ public class CustomFieldDefinition extends SoftDeletableEntity {
 
     @Column(name = "dictionary_type", length = 64)
     private String dictionaryType;
+    @JdbcTypeCode(SqlTypes.JSON) @Column(name="applicable_tracks",columnDefinition="json") private List<String> applicableTracks=new ArrayList<>();
+    public List<String> getApplicableTracks(){return applicableTracks==null?List.of():applicableTracks;}
+    public void setApplicableTracks(List<String> value){applicableTracks=value==null?new ArrayList<>():new ArrayList<>(value);}
+    public boolean appliesTo(String track){return getApplicableTracks().isEmpty()||getApplicableTracks().contains(track);}
 
     protected CustomFieldDefinition() {
     }

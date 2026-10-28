@@ -18,6 +18,8 @@ import type {
   Revenue,
   ValueRule,
 } from '@/types'
+import type { ProductDefinition, ProductInput } from '@/lib/products'
+import type { Person, PersonInput, PersonReference } from '@/lib/people'
 
 // ============================================================
 // API 契约层 —— 与 docs/API.md 对齐。
@@ -26,6 +28,11 @@ import type {
 
 // ---------- 项目 ----------
 export interface ProjectListQuery {
+  solution?: string
+  subSolution?: string
+  responsibleId?: ID
+  hcsStatus?: string
+  actionRange?: 'overdue' | 'today' | 'next7' | 'unscheduled'
   industry?: string
   track?: string
   projectStatus?: string
@@ -56,6 +63,7 @@ export interface ProjectDetail {
 
 // ---------- 客户分析 ----------
 export interface CustomerProjectSummary {
+  solutions?: import('@/types').SolutionSelection[]
   id: ID
   externalId: string | null
   projectName: string
@@ -164,6 +172,7 @@ export interface DictionaryImportResult {
 }
 
 export interface CustomFieldInput {
+  applicableTracks?: string[]
   fieldKey: string
   label: string
   fieldType: CustomFieldType
@@ -236,7 +245,46 @@ export interface ExportResult {
 }
 
 // ============================================================
-export interface ApiClient {
+export interface BackgroundJob {
+  id: string
+  kind: string
+  status: 'QUEUED' | 'RUNNING' | 'SUCCEEDED' | 'PARTIAL' | 'FAILED' | 'INTERRUPTED'
+  total: number
+  processed: number
+  succeeded: number
+  failed: number
+  error?: string | null
+  createdAt: string
+  updatedAt: string
+}
+export interface BackgroundJobItem { index: number; status: string; input: unknown; result: unknown; error?: string | null }
+export interface ProgressRepairRow { id: ID; projectId: ID; projectName: string; logDate: string; content: string; createdAt: string; classification: 'repairable' | 'verified' | 'manual'; reason: string; proposedDate: string | null; proposedContent: string | null }
+export interface ProgressRepairInput { id: ID; expectedLogDate: string; expectedContent: string; logDate: string; content: string; evidence: string }
+export interface MigrationIssue { id: ID; projectId: ID | null; area: string; reason: string; originalValue: string | null; resolved: boolean; createdAt: string }
+export interface JobApi {
+  startPeopleImport(input: { requestId: string; people: PersonInput[] }): Promise<BackgroundJob>
+  startProgressRepairJob(input: { requestId: string; repairs: ProgressRepairInput[] }): Promise<BackgroundJob>
+  listJobs(): Promise<BackgroundJob[]>
+  getJob(id: string): Promise<BackgroundJob>
+  getJobItems(id: string, page?: number): Promise<{ total: number; items: BackgroundJobItem[] }>
+  getJobResult(id: string): Promise<unknown>
+  retryJob(id: string, requestId: string): Promise<BackgroundJob>
+  startProjectBatch(input: { requestId: string; operation: 'delete' | 'restore' | 'purge'; projectIds: ID[] }): Promise<BackgroundJob>
+  startImportJob(input: { requestId: string; request: { mappingId?: ID | null; dryRun: boolean; records: ImportRecordInput[]; pendingFields?: ImportFieldDefinition[] } }): Promise<BackgroundJob>
+  startExportJob(input: { requestId: string; request: { templateId?: ID; scope?: ExportScope; columns?: ExportColumn[]; filters?: ExportFilters } }): Promise<BackgroundJob>
+}
+
+export interface ApiClient extends JobApi {
+  listPeople(): Promise<Person[]>
+  savePerson(input: PersonInput, id?: ID): Promise<Person>
+  matchPeople(input: PersonReference[]): Promise<{ personIds: ID[]; issues: string[] }>
+  getSolutionStats(): Promise<SolutionStats>
+  listProductCatalog(): Promise<ProductDefinition[]>
+  createProduct(input: ProductInput): Promise<ProductDefinition>
+  updateProduct(id: ID, input: ProductInput): Promise<ProductDefinition>
+  getMigrationIssues(): Promise<MigrationIssue[]>
+  previewProgressRepairs(page?: number): Promise<{ total: number; items: ProgressRepairRow[] }>
+  completeAction(id: ID, input: { nextActionDate: string | null; nextActionNote: string }): Promise<Project>
   // 项目
   listProjects(q: ProjectListQuery): Promise<Paged<Project>>
   getProjectDetail(id: ID): Promise<ProjectDetail>
@@ -277,13 +325,13 @@ export interface ApiClient {
 
   // 配置：导入映射 / 导出模板 / 自定义字段
   listImportMappings(): Promise<ImportMapping[]>
-  createImportMapping(input: { name: string; columnMap: Record<string, string>; valueRules: ValueRule[] }): Promise<ImportMapping>
-  updateImportMapping(id: ID, input: { name: string; columnMap: Record<string, string>; valueRules: ValueRule[] }): Promise<ImportMapping>
+  createImportMapping(input: { name: string; columnMap: Record<string, string>; valueRules: ValueRule[]; applicableTrack?: string | null }): Promise<ImportMapping>
+  updateImportMapping(id: ID, input: { name: string; columnMap: Record<string, string>; valueRules: ValueRule[]; applicableTrack?: string | null }): Promise<ImportMapping>
   deleteImportMapping(id: ID): Promise<void>
 
   listExportTemplates(): Promise<ExportTemplate[]>
-  createExportTemplate(input: { name: string; scope: ExportScope; columns: ExportColumn[] }): Promise<ExportTemplate>
-  updateExportTemplate(id: ID, input: { name: string; scope: ExportScope; columns: ExportColumn[] }): Promise<ExportTemplate>
+  createExportTemplate(input: { name: string; scope: ExportScope; columns: ExportColumn[]; applicableTrack?: string | null }): Promise<ExportTemplate>
+  updateExportTemplate(id: ID, input: { name: string; scope: ExportScope; columns: ExportColumn[]; applicableTrack?: string | null }): Promise<ExportTemplate>
   deleteExportTemplate(id: ID): Promise<void>
 
   listCustomFields(): Promise<CustomFieldDef[]>
@@ -307,4 +355,11 @@ export interface ApiClient {
 
   // 一键全量备份（JSON）
   backupAll(): Promise<unknown>
+}
+export interface SolutionStats {
+  totalProjectCount: number
+  coveredProjectCount: number
+  solutionCoverageCount: number
+  notice: string
+  items: { id: number; solution: string; projectCount: number; customerCount: number; wonProjectCount: number; statusCounts: Record<string, number>; subSolutions: { id: number; name: string; projectCount: number; customerCount: number }[] }[]
 }

@@ -16,9 +16,11 @@ public record CustomFieldRequest(
         boolean required,
         @NotNull List<@NotBlank String> options,
         int sortOrder,
-        @Pattern(regexp = "^[a-z][a-z0-9_]{0,63}$", message = "字典标识格式不正确") String dictionaryType
+        @Pattern(regexp = "^[a-z][a-z0-9_]{0,63}$", message = "字典标识格式不正确") String dictionaryType,
+        @Size(max=2) List<String> applicableTracks
 ) {
+    public CustomFieldRequest(String fieldKey,String label,String fieldType,boolean required,List<String> options,int sortOrder,String dictionaryType){this(fieldKey,label,fieldType,required,options,sortOrder,dictionaryType,List.of());}
     public CustomFieldRequest(String fieldKey, String label, String fieldType, boolean required, List<String> options, int sortOrder) {
-        this(fieldKey, label, fieldType, required, options, sortOrder, null);
+        this(fieldKey, label, fieldType, required, options, sortOrder, null,List.of());
     }
 }

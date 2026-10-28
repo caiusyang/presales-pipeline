@@ -16,6 +16,7 @@ describe('项目状态与中标信息', () => {
 
   it('中标时强制确认方案、细分方案和至少一个产品', () => {
     const input = { ...emptyProjectInput(), customerName: '客户', projectName: '项目', projectStatus: '中标' as const }
+    delete input.solutions // 验证过渡期的旧单方案请求。
     expect(validateProjectInput(input, [])).toBe('中标时请选择解决方案')
     input.solution = '云安全'
     expect(validateProjectInput(input, [])).toBe('中标时请选择细分解决方案')

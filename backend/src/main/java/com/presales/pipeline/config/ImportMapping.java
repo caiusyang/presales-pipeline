@@ -18,6 +18,9 @@ public class ImportMapping extends SoftDeletableEntity {
 
     @Column(nullable = false)
     private String name;
+    @Column(name="applicable_track",length=16) private String applicableTrack;
+    public String getApplicableTrack(){return applicableTrack;}
+    public void setApplicableTrack(String value){applicableTrack=value;}
 
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "column_map", nullable = false, columnDefinition = "json")

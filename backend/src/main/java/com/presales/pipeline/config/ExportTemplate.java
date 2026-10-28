@@ -17,6 +17,9 @@ public class ExportTemplate extends SoftDeletableEntity {
 
     @Column(nullable = false)
     private String name;
+    @Column(name="applicable_track",length=16) private String applicableTrack;
+    public String getApplicableTrack(){return applicableTrack;}
+    public void setApplicableTrack(String value){applicableTrack=value;}
 
     @Column(nullable = false, length = 32)
     private String scope;

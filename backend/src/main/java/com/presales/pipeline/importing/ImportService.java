@@ -49,10 +49,10 @@ public class ImportService {
             }
             try {
                 // 先预检再占用本批标识；同项目不同标识也按实际匹配结果判重。
-                ImportRecordProcessor.ProcessedRecord result = processor.process(record, true, request.pendingFields());
+                ImportRecordProcessor.ProcessedRecord result = processor.process(record, request.dryRun(), request.pendingFields(),seenIdentifiers);
                 Set<String> resolved = new HashSet<>();
-                if (result.projectId() != null) resolved.add("project:" + result.projectId());
-                if (result.externalId() != null) resolved.add("external:" + result.externalId().toLowerCase(Locale.ROOT));
+                if (result.projectId() != null) resolved.add("id:" + result.projectId());
+                if (result.externalId() != null) resolved.add("ext:" + result.externalId().toLowerCase(Locale.ROOT));
                 resolved.add("name:" + result.customerName().toLowerCase(Locale.ROOT) + "\u0000" + result.projectName().toLowerCase(Locale.ROOT));
                 if (resolved.stream().anyMatch(seenIdentifiers::contains)) {
                     String reason = "同一导入批次中项目重复，仅处理首次通过校验的记录";
@@ -60,7 +60,6 @@ public class ImportService {
                     skipped++;
                     continue;
                 }
-                if (!request.dryRun()) result = processor.process(record, false, request.pendingFields());
                 seenIdentifiers.addAll(resolved);
                 if (result.action() == ImportRecordProcessor.Action.ADDED) {
                     added++;
@@ -91,7 +90,7 @@ public class ImportService {
         String project = string(fields, "projectName", "project_name");
         List<String> identifiers = new ArrayList<>();
         if (externalId != null) {
-            identifiers.add("external:" + externalId.toLowerCase(Locale.ROOT));
+            identifiers.add("ext:" + externalId.toLowerCase(Locale.ROOT));
         }
         if (customer != null && project != null) {
             identifiers.add("name:" + customer.toLowerCase(Locale.ROOT) + "\u0000" + project.toLowerCase(Locale.ROOT));

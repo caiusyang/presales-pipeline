@@ -10,6 +10,7 @@ public record ImportMappingResponse(
         Map<String, Object> columnMap,
         List<Map<String, Object>> valueRules,
         LocalDateTime createdAt,
-        LocalDateTime updatedAt
+        LocalDateTime updatedAt,
+        String applicableTrack
 ) {
 }

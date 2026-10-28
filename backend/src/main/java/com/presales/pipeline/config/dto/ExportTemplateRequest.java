@@ -10,6 +10,8 @@ import java.util.List;
 public record ExportTemplateRequest(
         @NotBlank @Size(max = 255) String name,
         @NotBlank String scope,
-        @NotEmpty List<@Valid ExportColumnRequest> columns
+        @NotEmpty List<@Valid ExportColumnRequest> columns,
+        String applicableTrack
 ) {
+    public ExportTemplateRequest(String name,String scope,List<ExportColumnRequest> columns){this(name,scope,columns,null);}
 }

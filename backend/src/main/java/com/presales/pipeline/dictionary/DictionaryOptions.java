@@ -13,6 +13,9 @@ public class DictionaryOptions {
         this.categories = categories; this.items = items;
     }
     public List<String> resolve(String type) {
+        return com.presales.pipeline.importing.ImportReferenceScope.cached("options:"+type,()->load(type));
+    }
+    private List<String> load(String type) {
         DictionaryCategory category = categories.findByTypeAndDeletedFalse(type)
                 .orElseThrow(() -> BusinessException.badRequest("关联的字典分类不存在"));
         if (category.isBuiltIn()) throw BusinessException.badRequest("自定义字段仅可关联自定义字典分类");

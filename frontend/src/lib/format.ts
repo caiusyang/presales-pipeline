@@ -1,4 +1,5 @@
 import dayjs from 'dayjs'
+import { parseProgressCell } from './progressDate'
 
 /** 金额展示：万元，空值显示 - */
 export function fmtAmount(v: number | null | undefined): string {
@@ -26,27 +27,10 @@ export function isValidMonth(s: string): boolean {
   return MONTH_RE.test(s)
 }
 
-/** 从进展单元格文本拆出多条进展：按换行拆行，支持 `日期：内容` / `日期:内容` 等写法，无日期归入 fallbackDate */
+/** 严格解析；旧签名传日期时仅取年份，不再回退到当天。错误需由调用方展示。 */
 export function parseProgressText(
   text: string,
-  fallbackDate: string,
+  defaultYear: number | string,
 ): { logDate: string; content: string }[] {
-  return text
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => {
-      const m = line.match(/^(\d{4}[-/年.]\d{1,2}[-/月.]\d{1,2})日?\s*[:：]?\s*(.*)$/)
-      if (m) {
-        const norm = m[1]
-          .replace(/[年/.]/g, '-')
-          .replace(/月/g, '-')
-          .replace(/日/g, '')
-          .split('-')
-          .map((seg, i) => (i === 0 ? seg : seg.padStart(2, '0')))
-          .join('-')
-        return { logDate: DATE_RE.test(norm) ? norm : fallbackDate, content: m[2] || line }
-      }
-      return { logDate: fallbackDate, content: line }
-    })
+  return parseProgressCell(text, typeof defaultYear === 'number' ? defaultYear : Number(defaultYear.slice(0, 4))).entries
 }

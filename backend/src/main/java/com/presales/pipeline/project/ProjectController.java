@@ -36,12 +36,19 @@ public class ProjectController {
             @RequestParam(required = false) String endMonth,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
-            @RequestParam(defaultValue = "updatedAt") String sortBy,
+            @RequestParam(defaultValue = "actionPriority") String sortBy,
             @RequestParam(defaultValue = "desc") String sortDirection,
-            @RequestParam(defaultValue = "false") boolean deleted) {
+            @RequestParam(defaultValue = "false") boolean deleted,
+            @RequestParam(required=false) String actionRange,
+            @RequestParam(required=false) String solution,
+            @RequestParam(required=false) String subSolution,
+            @RequestParam(required=false) Long responsibleId,
+            @RequestParam(required=false) String hcsStatus) {
         return ApiResponse.success(service.list(industry, track, projectStatus, keyword, startMonth, endMonth,
-                page, size, sortBy, sortDirection, deleted));
+                page, size, sortBy, sortDirection, deleted,actionRange,solution,subSolution,responsibleId,hcsStatus));
     }
+    public record Action(java.time.LocalDate nextActionDate,@jakarta.validation.constraints.Size(max=20000) String nextActionNote){}
+    @PostMapping("/{id}/complete-action") public ApiResponse<ProjectResponse> completeAction(@PathVariable Long id,@Valid @RequestBody Action action){return ApiResponse.success(service.completeAction(id,action.nextActionDate(),action.nextActionNote()));}
 
     @GetMapping("/{id}/detail")
     public ApiResponse<ProjectDetailResponse> detail(@PathVariable Long id) {

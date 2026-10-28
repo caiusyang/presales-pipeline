@@ -8,6 +8,7 @@ import org.springframework.data.repository.query.Param;
 import java.util.List;
 
 public interface ProjectProductRepository extends JpaRepository<ProjectProduct, Long> {
+    List<ProjectProduct> findAllByProjectIdIn(List<Long> ids);
     @Modifying
     @Query("delete from ProjectProduct p where p.project.id = :projectId")
     void deleteAllByProjectId(@Param("projectId") Long projectId);

@@ -8,6 +8,8 @@ import org.springframework.data.repository.query.Param;
 import java.util.List;
 
 public interface ChangeLogRepository extends JpaRepository<ChangeLog, Long> {
+    @Query("select c.oldValue,c.newValue from ChangeLog c where c.project.id=:projectId and c.field='projectIdentity'")
+    List<Object[]> identityHistory(@Param("projectId") Long projectId);
     @Modifying
     @Query("delete from ChangeLog c where c.project.id = :projectId")
     void deleteAllByProjectId(@Param("projectId") Long projectId);

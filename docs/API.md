@@ -22,7 +22,10 @@
 | `industry` / `track` / `projectStatus` / `keyword` | 行业、赛道、项目状态、关键字筛选 |
 | `startMonth` / `endMonth` | `YYYY-MM`；筛选期间有收入的项目，并按该期间计算 `revenueTotal` |
 | `page` / `size` | 从 0 开始；每页 1～200 条 |
-| `sortBy` | `id/customerName/projectName/projectStatus/industry/track/createdAt/updatedAt` |
+| `sortBy` | 默认 `actionPriority`，或 `id/customerName/projectName/projectStatus/industry/track/createdAt/updatedAt` |
+| `actionRange` | `overdue/today/next7/unscheduled`，均在分页前筛选 |
+| `solution` / `subSolution` | 按结构化方案关系筛选 |
+| `responsibleId` / `hcsStatus` | 责任人编号 / 独立 HCS 状态筛选 |
 | `sortDirection` | `asc` 或 `desc` |
 | `deleted` | `false` 查活动项目，`true` 查回收站 |
 
@@ -42,7 +45,11 @@
   "solution": "安全咨询",
   "subSolution": "数据安全规划",
   "purchasedProducts": ["DSC", "DEW"],
-  "track": "数据安全",
+  "track": "公有云",
+  "securityDirection": "数据安全",
+  "solutions": [{"solution":"安全咨询","subSolutions":["数据安全规划"]}],
+  "nextActionDate": "2026-11-01",
+  "nextActionNote": "确认方案",
   "industry": "金融",
   "subIndustry": "银行",
   "scenario": "核心数据治理",
@@ -54,7 +61,35 @@
 }
 ```
 
-`projectStatus` 仅支持 `机会点识别`、`方案引导`、`方案设计`、`中标`，省略时默认为`机会点识别`。状态为`中标`时，`solution`、`subSolution` 和至少一个 `purchasedProducts` 必填；状态回退时这些信息会保留。产品编码固定为 `AAD`、`WAF`、`CFW`、`ESA`、`HSS`、`NDR`、`DEW`、`DSC`、`SecMaster`、`DBSS`、`CBH`、`安全运营专业服务`、`大模型防火墙`、`智能体卫士`。
+`projectStatus` 仅支持 `机会点识别`、`方案引导`、`方案设计`、`中标`，省略默认`机会点识别`。中标要求至少一组完整有效的 `solutions` 方案/细分和一个已购产品；状态回退保留信息。省略 `solutions` 的旧请求可由 `solution/subSolution` 转为一项，显式 `[]` 表示清空。产品编码从 `/config/products` 读取，不再固定。赛道可空（待分类），非空只支持 HCS、公有云。`lastFollowUpAt`、`hcsStatus`、`lastSyncAt` 为只读；可写 `hcsOpportunityId` 和手工 `responsibleIds`（更新省略保留，空数组清空手工关联，不影响 HCS 来源）。
+
+### 本轮新增接口
+
+| 接口 | 用途 |
+| --- | --- |
+| `POST /projects/{id}/complete-action` | `{nextActionDate:null,nextActionNote:"已完成"}` 清空或安排下一次 |
+| `GET /stats/solutions` | 方案/细分内去重计数、本地状态分布、中标和客户数，不分摊收入 |
+| `GET/POST /config/products`、`PUT /config/products/{id}` | 产品目录：code/name/aliases/applicableTracks/sortOrder/enabled；编码不能改 |
+| `GET/POST /config/people`、`PUT /config/people/{id}` | 责任人库：name/employeeNo/account/aliases/enabled |
+| `POST /config/people/import` | `{requestId,people:[...]}` 返回后台任务 |
+| `POST /config/people/match` | 多个 `{employeeNo,account,name,role}`，返回所有唯一命中和歧义项 |
+| `GET /progress/repair?page=0&size=100&projectId=...` | 依据原文完整日期生成历史修复预览 |
+| `POST /progress/repair/jobs` | `{requestId,repairs:[{id,expectedLogDate,expectedContent,logDate,content,evidence}]}` |
+| `GET /migration-issues` | 迁移待处理原值、项目及原因 |
+
+`CustomField` 增加 `applicableTracks:[]`（空数组为公共）；导入映射/导出模板增加可空的 `applicableTrack`。
+
+### 持久后台任务
+
+- `POST /projects/batch`：`{requestId,operation:"delete|restore|purge",projectIds:[...]}`，最多5000个，去重。
+- `POST /import/jobs`：`{requestId,request:{dryRun,records,pendingFields,mappingId}}`。
+- `POST /export/jobs`：`{requestId,request:{scope,columns,filters,templateId}}`。
+- `GET /jobs`、`GET /jobs/{id}`：任务进度；`GET /jobs/{id}/items?page=0&size=100`：逐项结果；`GET /jobs/{id}/result`：聚合结果。
+- `POST /jobs/{id}/retry`：`{requestId}`，成功项不重跑；同一重试标识不重复排队。
+
+受理返回任务视图（id/kind/status/total/processed/succeeded/failed/error/createdAt/updatedAt），不是业务结果。状态为 QUEUED/RUNNING/SUCCEEDED/PARTIAL/FAILED/INTERRUPTED。唯一 requestId 重复提交相同内容返回原任务，不同内容返回409。单项事务同时提交业务与成功标记。每批100条，最多2个并行；重启标中断。导出必须全部分块成功才能下载，硬删除导致分块快照清理后，需先重试剩余项目。任务原文同样进入备份及永久删除清理范围。
+
+当前没有真实 HCS 网络同步入口，详见 `HCS_INTEGRATION.md`，不要把人员匹配接口当作 HCS 已联调。
 
 ### `GET /api/projects/{id}/detail`
 
@@ -189,7 +224,7 @@
 }
 ```
 
-方案目录的类型依次为 `solution`、`sub_solution`、`product`，后两级创建时必须传对应上级的 `parentId`。`product` 的值只能从固定产品目录选择，产品编码不可重命名；产品与不同细分解决方案的关联仍可自行配置。
+方案目录类型依次为 `solution`、`sub_solution`、`product`，后两级创建须传对应上级 `parentId`。产品节点引用可维护目录的稳定编码，不可重命名编码；同一产品可关联不同细分方案。推荐关系不限制项目独立已购产品。
 
 `type` 使用小写字母开头、数字和下划线，最长64字符。内置类型为 `track`、`solution`、`sub_solution`、`product`、`industry`、`sub_industry`；其余为自建字典，均为单层值（`parentId=null`）。项目的 `securityBudget` 是“客户安全预算（万元）”数值字段，不属于字典；`scenario` 是应用场景自由文本，也不属于字典。
 
@@ -218,7 +253,7 @@
 }
 ```
 
-每批1至5000条，`value` 去除首尾空格，最长255字符；相同类型和上级下现有值、批内重复值忽略大小写跳过。`dryRun=true` 不新增分类、字典项或字段；正式导入每行独立处理，失败不阻挡其他有效值。响应 `{dryRun,added,skipped,failed,details:[{sourceRow,value,status,reason,id}]}`，`status` 为 `added/skipped/failed`；预检的 `added` 表示确认后可新增，尚无 `id`。内置子行业、细分方案和产品导入必须指定正确上级；产品仍受固定产品目录约束。
+每批1至5000条，`value` 去除首尾空格，最长255字符；相同类型和上级下现有值、批内重复值忽略大小写跳过。`dryRun=true` 不新增分类、字典项或字段；正式导入每行独立处理，失败不阻挡其他有效值。响应 `{dryRun,added,skipped,failed,details:[{sourceRow,value,status,reason,id}]}`，`status` 为 `added/skipped/failed`；预检 `added` 尚无 `id`。内置子行业、细分方案和产品导入须指定正确上级；产品受动态目录约束，赛道 HCS/公有云禁止自行扩充。
 
 界面先选字典（或内置层级的目标上级），支持 Excel/XLS/CSV 首个工作表的指定列，及每行一个值的多行粘贴。空行忽略但保留非空值的原始行号。预检后显示重复和错误明细，确认后仅新增有效值，不覆盖现有项。
 
@@ -372,7 +407,7 @@
 }
 ```
 
-`scope` 支持 `combined/projects/revenues/progress`。前端默认使用 `combined` 生成项目综合宽表：每个活动项目只占一行；固定产品使用 `product.<产品编码>` 独立成列，已购填“已购”、未购留空；各月份收入保持为独立数值列；`progressSummary` 按时间倒序以“日期：内容”换行汇总，避免收入与进展两组明细相乘导致重复。月份筛选会同时约束收入月份、收入合计和进展日志。响应只返回 JSON 和有序列定义，xlsx 由前端生成，文件中只有一个工作表。历史模板中的 `purchasedProducts` 会在读取和导出时自动展开为全部固定产品列。
+`scope` 支持 `combined/projects/revenues/progress`。前端默认综合宽表每活动项目一行，动态目录以 `product.<编码>` 拆列，已购填“已购”、未购留空；收入按月数值列，`solutions` 为父子关系 JSON，`progressSummary` 倒序换行“日期：内容”，不产生收入×进展笛卡尔积。月份筛选同时约束收入、合计和进展。返回 JSON 与有序列定义，xlsx 由前端 Worker 生成一个工作表。历史 `purchasedProducts` 列会展开为目录产品列。
 
 ## 备份与健康
 

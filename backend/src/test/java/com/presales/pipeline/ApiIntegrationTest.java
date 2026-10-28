@@ -37,10 +37,12 @@ class ApiIntegrationTest {
 
     @Test
     void completeBusinessFlowWorks() throws Exception {
+        mockMvc.perform(post("/api/dictionaries").with(csrf()).contentType(MediaType.APPLICATION_JSON).content("{\"type\":\"solution\",\"value\":\"安全咨询\",\"parentId\":null,\"sortOrder\":10}")).andExpect(status().isOk());
+        mockMvc.perform(post("/api/dictionaries").with(csrf()).contentType(MediaType.APPLICATION_JSON).content("{\"type\":\"solution\",\"value\":\"平台建设\",\"parentId\":null,\"sortOrder\":20}")).andExpect(status().isOk());
         long trackId = dataId(mockMvc.perform(post("/api/dictionaries").with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"type":"track","value":"数据安全","parentId":null,"sortOrder":10}
+                                {"type":"security_direction","value":"数据安全","parentId":null,"sortOrder":10}
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
@@ -49,7 +51,7 @@ class ApiIntegrationTest {
         mockMvc.perform(put("/api/dictionaries/{id}", trackId).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"type":"track","value":"数据安全","parentId":null,"sortOrder":20}
+                                {"type":"security_direction","value":"数据安全","parentId":null,"sortOrder":20}
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.sortOrder").value(20));
@@ -139,7 +141,7 @@ class ApiIntegrationTest {
                                   "projectName":"数据安全治理",
                                   "securityBudget":500.25,
                                   "solution":"安全咨询",
-                                  "track":"数据安全",
+                                  "track":"公有云","securityDirection":"数据安全",
                                   "industry":"金融",
                                   "subIndustry":null,
                                   "scenario":"核心数据治理",
@@ -200,7 +202,7 @@ class ApiIntegrationTest {
                                   "projectName":"数据安全治理一期",
                                   "securityBudget":800.00,
                                   "solution":"平台建设",
-                                  "track":"数据安全",
+                                  "track":"公有云","securityDirection":"数据安全",
                                   "industry":"金融",
                                   "subIndustry":null,
                                   "scenario":"核心数据治理",

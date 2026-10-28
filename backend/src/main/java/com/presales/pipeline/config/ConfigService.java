@@ -38,11 +38,13 @@ public class ConfigService {
     private final CustomFieldDefinitionRepository customFieldRepository;
     private final ProjectRepository projectRepository;
     private final DictionaryOptions dictionaryOptions;
+    private final ProductCatalog productCatalog;
 
     public ConfigService(ImportMappingRepository importMappingRepository,
                          ExportTemplateRepository exportTemplateRepository,
                          CustomFieldDefinitionRepository customFieldRepository,
-                         ProjectRepository projectRepository, DictionaryOptions dictionaryOptions) {
+                         ProjectRepository projectRepository, DictionaryOptions dictionaryOptions,ProductCatalog productCatalog) {
+        this.productCatalog=productCatalog;
         this.importMappingRepository = importMappingRepository;
         this.exportTemplateRepository = exportTemplateRepository;
         this.customFieldRepository = customFieldRepository;
@@ -171,7 +173,7 @@ public class ConfigService {
 
     @Transactional(readOnly = true)
     public List<CustomFieldResponse> listCustomFields() {
-        return customFieldRepository.findAllByDeletedFalseOrderBySortOrderAscIdAsc().stream()
+        return definitions().stream()
                 .map(this::toResponse).toList();
     }
 
@@ -187,7 +189,7 @@ public class ConfigService {
         }
         CustomFieldDefinition definition = new CustomFieldDefinition();
         apply(definition, request, true);
-        return toResponse(customFieldRepository.save(definition));
+        var saved=customFieldRepository.save(definition);com.presales.pipeline.importing.ImportReferenceScope.clear();return toResponse(saved);
     }
 
     @Transactional
@@ -220,7 +222,7 @@ public class ConfigService {
         if (!definition.isDeleted()) return toResponse(definition);
         CustomFieldRequest request = new CustomFieldRequest(definition.getFieldKey(), definition.getLabel(),
                 definition.getFieldType(), definition.isRequired(), definition.getOptions(), definition.getSortOrder(),
-                definition.getDictionaryType());
+                definition.getDictionaryType(),definition.getApplicableTracks());
         // Options and project values may have changed while this definition was deleted.
         // Validate before reactivating so a failure leaves the field deleted atomically.
         validateExistingValues(request);
@@ -231,8 +233,12 @@ public class ConfigService {
 
     @Transactional(readOnly = true)
     public Map<String, Object> normalizeAndValidateCustomFields(Map<String, Object> incoming) {
+        return normalizeAndValidateCustomFields(incoming,null);
+    }
+    @Transactional(readOnly=true)
+    public Map<String,Object> normalizeAndValidateCustomFields(Map<String,Object> incoming,String track) {
         Map<String, Object> values = incoming == null ? Map.of() : incoming;
-        List<CustomFieldDefinition> definitions = customFieldRepository.findAllByDeletedFalseOrderBySortOrderAscIdAsc();
+        List<CustomFieldDefinition> definitions = definitions();
         Map<String, CustomFieldDefinition> byKey = definitions.stream()
                 .collect(Collectors.toMap(CustomFieldDefinition::getFieldKey, item -> item));
 
@@ -245,6 +251,7 @@ public class ConfigService {
         Map<String, Object> normalized = new LinkedHashMap<>();
         for (CustomFieldDefinition definition : definitions) {
             Object raw = values.get(definition.getFieldKey());
+            if(!definition.appliesTo(track)){if(!isEmpty(raw))normalized.put(definition.getFieldKey(),raw);continue;}
             if (isEmpty(raw)) {
                 if (definition.isRequired()) {
                     throw BusinessException.badRequest("自定义字段“" + definition.getLabel() + "”为必填项");
@@ -257,6 +264,7 @@ public class ConfigService {
     }
 
     private void apply(ImportMapping mapping, ImportMappingRequest request) {
+        mapping.setApplicableTrack(normalizeTrack(request.applicableTrack()));
         mapping.setName(clean(request.name()));
         mapping.setColumnMap(request.columnMap());
         mapping.setValueRules(request.valueRules());
@@ -278,18 +286,20 @@ public class ConfigService {
         }
         template.setName(clean(request.name()));
         template.setScope(scope);
+        template.setApplicableTrack(normalizeTrack(request.applicableTrack()));
         template.setColumns(columns);
     }
 
     private Set<String> allowedExportKeys(String scope) {
         Set<String> keys = new LinkedHashSet<>();
+        if(scope.equals(ExportScope.COMBINED)||scope.equals(ExportScope.PROJECTS))keys.addAll(Set.of("lastFollowUpAt","nextActionDate","nextActionNote","securityDirection","solutions","responsibles","hcsOpportunityId","hcsStatus","lastSyncAt"));
         switch (scope) {
             case ExportScope.COMBINED -> {
                 keys.addAll(Set.of("id", "externalId", "customerName", "projectName", "projectStatus",
                         "securityBudget", "solution", "subSolution", "track", "industry",
                         "subIndustry", "scenario", "keyRisks", "keyNeeds", "revenueTotal", "progressSummary",
                         "createdAt", "updatedAt"));
-                ProductCatalog.CODES.forEach(code -> keys.add(ProductCatalog.exportFieldKey(code)));
+                productCatalog.codes().forEach(code -> keys.add(ProductCatalog.exportFieldKey(code)));
                 customFieldRepository.findAllByDeletedFalseOrderBySortOrderAscIdAsc().forEach(definition ->
                         keys.add("custom." + definition.getFieldKey()));
             }
@@ -298,7 +308,7 @@ public class ConfigService {
                         "securityBudget", "solution", "subSolution", "track", "industry",
                         "subIndustry", "scenario", "keyRisks", "keyNeeds", "revenueTotal", "createdAt",
                         "updatedAt"));
-                ProductCatalog.CODES.forEach(code -> keys.add(ProductCatalog.exportFieldKey(code)));
+                productCatalog.codes().forEach(code -> keys.add(ProductCatalog.exportFieldKey(code)));
                 customFieldRepository.findAllByDeletedFalseOrderBySortOrderAscIdAsc().forEach(definition ->
                         keys.add("custom." + definition.getFieldKey()));
             }
@@ -327,6 +337,8 @@ public class ConfigService {
         definition.setFieldType(type);
         definition.setRequired(request.required());
         definition.setDictionaryType(dictionaryType);
+        List<String> tracks=request.applicableTracks()==null?List.of():request.applicableTracks().stream().distinct().toList();
+        if(tracks.stream().anyMatch(track->!List.of("HCS","公有云").contains(track)))throw BusinessException.badRequest("适用赛道只能选择 HCS、公有云");definition.setApplicableTracks(tracks);
         definition.setOptions("option".equals(type) && dictionaryType == null ? options : List.of());
         definition.setSortOrder(request.sortOrder());
     }
@@ -335,6 +347,7 @@ public class ConfigService {
         CustomFieldDefinition candidate = new CustomFieldDefinition();
         apply(candidate, request, true);
         for (Project project : projectRepository.findAll()) {
+            if(!candidate.appliesTo(project.getTrack()))continue;
             Object value = project.getCustomFields().get(request.fieldKey());
             if (isEmpty(value)) {
                 if (request.required()) {
@@ -393,7 +406,7 @@ public class ConfigService {
 
     private ImportMappingResponse toResponse(ImportMapping mapping) {
         return new ImportMappingResponse(mapping.getId(), mapping.getName(), mapping.getColumnMap(),
-                mapping.getValueRules(), mapping.getCreatedAt(), mapping.getUpdatedAt());
+                mapping.getValueRules(), mapping.getCreatedAt(), mapping.getUpdatedAt(),mapping.getApplicableTrack());
     }
 
     @SuppressWarnings("unchecked")
@@ -403,7 +416,7 @@ public class ConfigService {
                         String.valueOf(column.get("title"))))
                 .toList());
         return new ExportTemplateResponse(template.getId(), template.getName(), template.getScope(), columns,
-                template.getCreatedAt(), template.getUpdatedAt());
+                template.getCreatedAt(), template.getUpdatedAt(),template.getApplicableTrack());
     }
 
     private List<ExportColumnRequest> expandLegacyProductColumns(String scope, List<ExportColumnRequest> columns) {
@@ -412,8 +425,8 @@ public class ConfigService {
         }
         return columns.stream()
                 .flatMap(column -> "purchasedProducts".equals(column.key())
-                        ? ProductCatalog.CODES.stream().map(code ->
-                                new ExportColumnRequest(ProductCatalog.exportFieldKey(code), code))
+                        ? productCatalog.codes().stream().map(code ->
+                                new ExportColumnRequest(ProductCatalog.exportFieldKey(code), productCatalog.name(code)))
                         : java.util.stream.Stream.of(column))
                 .toList();
     }
@@ -421,10 +434,12 @@ public class ConfigService {
     private CustomFieldResponse toResponse(CustomFieldDefinition definition) {
         return new CustomFieldResponse(definition.getId(), definition.getFieldKey(), definition.getLabel(),
                 definition.getFieldType(), definition.isRequired(), options(definition), definition.getSortOrder(),
-                definition.getCreatedAt(), definition.getUpdatedAt(), definition.getDictionaryType());
+                definition.getCreatedAt(), definition.getUpdatedAt(), definition.getDictionaryType(),definition.getApplicableTracks());
     }
 
     private List<String> options(CustomFieldDefinition definition) {
         return definition.getDictionaryType() == null ? definition.getOptions() : dictionaryOptions.resolve(definition.getDictionaryType());
     }
+    private List<CustomFieldDefinition> definitions(){return com.presales.pipeline.importing.ImportReferenceScope.cached("field-definitions",customFieldRepository::findAllByDeletedFalseOrderBySortOrderAscIdAsc);}
+    private String normalizeTrack(String value){if(value==null||value.isBlank())return null;if(!List.of("HCS","公有云").contains(value))throw BusinessException.badRequest("模板适用赛道只能是 HCS、公有云");return value;}
 }

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { Download, Plus, Search, Trash2, Upload } from 'lucide-react'
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { EmptyState } from '@/components/common/EmptyState'
@@ -18,13 +18,20 @@ import { ProjectDetailDrawer } from '@/components/project/ProjectDetailDrawer'
 import { ProjectFormDialog } from '@/components/project/ProjectFormDialog'
 import { ProjectTable } from '@/components/project/ProjectTable'
 import { WinProjectDialog } from '@/components/project/WinProjectDialog'
-import { useCustomFieldDefs, useDictionaries, useProjectMutations, useProjects } from '@/hooks/queries'
-import { industryCascade } from '@/lib/fields'
+import { CompleteActionDialog } from '@/components/project/CompleteActionDialog'
+import { useBusinessDate } from '@/hooks/useBusinessDate'
+import { useCustomFieldDefs, useDictionaries, useProjectMutations, useProjects, usePeople } from '@/hooks/queries'
+import { industryCascade, solutionCascade } from '@/lib/fields'
 import { cn } from '@/lib/utils'
 import type { ProjectListQuery } from '@/api/types'
 import { PROJECT_STATUSES, type ID, type Project } from '@/types'
 
 export default function PipelinePage() {
+  const [searchParams] = useSearchParams()
+  const [solution, setSolution] = useState(searchParams.get('solution') ?? '')
+  const [subSolution, setSubSolution] = useState(searchParams.get('subSolution') ?? '')
+  const [responsibleId, setResponsibleId] = useState(''), [hcsStatus, setHcsStatus] = useState('')
+  const peopleQ = usePeople()
   // ---------- 筛选状态 ----------
   const [keyword, setKeyword] = useState('')
   const [debouncedKeyword, setDebouncedKeyword] = useState('')
@@ -34,6 +41,9 @@ export default function PipelinePage() {
   const [startMonth, setStartMonth] = useState('')
   const [endMonth, setEndMonth] = useState('')
   const [recycleBin, setRecycleBin] = useState(false)
+  const [actionRange, setActionRange] = useState<ProjectListQuery['actionRange']>()
+  const [actionTarget, setActionTarget] = useState<Project | null>(null)
+  const today = useBusinessDate()
 
   // ---------- 分页 / 排序 ----------
   const [page, setPage] = useState(0) // 0 基，与后端一致
@@ -59,18 +69,21 @@ export default function PipelinePage() {
   // 筛选/回收站/每页条数变化回到第 1 页
   useEffect(() => {
     setPage(0)
-  }, [debouncedKeyword, industry, track, projectStatus, startMonth, endMonth, recycleBin, size])
+  }, [debouncedKeyword, industry, track, projectStatus, startMonth, endMonth, recycleBin, size, actionRange, solution, subSolution, responsibleId, hcsStatus])
 
   // 分页及排序保留选择；改变筛选范围时清空，避免删除隐藏在旧筛选中的项目。
   useEffect(() => {
     setSelectedProjects(new Map())
     setDeleteFailures([])
-  }, [keyword, industry, track, projectStatus, startMonth, endMonth, recycleBin, size])
+  }, [keyword, industry, track, projectStatus, startMonth, endMonth, recycleBin, size, actionRange, solution, subSolution, responsibleId, hcsStatus])
 
   // ---------- 数据 ----------
   const query: ProjectListQuery = {
     page,
     size,
+    ...(actionRange ? { actionRange } : {}),
+    ...(solution ? { solution } : {}), ...(subSolution ? { subSolution } : {}),
+    ...(responsibleId ? { responsibleId: Number(responsibleId) } : {}), ...(hcsStatus ? { hcsStatus } : {}),
     ...(debouncedKeyword ? { keyword: debouncedKeyword } : {}),
     ...(industry ? { industry } : {}),
     ...(track ? { track } : {}),
@@ -83,13 +96,15 @@ export default function PipelinePage() {
   const projectsQ = useProjects(query)
   const industryQ = useDictionaries('industry')
   const trackQ = useDictionaries('track')
+  const solutionQ = useDictionaries('solution')
+  const solutionTree = solutionCascade(solutionQ.data ?? [])
   const customDefsQ = useCustomFieldDefs()
-  const { remove, removeMany, purge, purgeMany } = useProjectMutations()
+  const { remove, removeMany, purge, purgeMany, restoreMany } = useProjectMutations()
 
   const total = projectsQ.data?.total ?? 0
   const items = projectsQ.data?.items ?? []
   const totalPages = Math.max(1, Math.ceil(total / size))
-  const deleting = remove.isPending || removeMany.isPending || purge.isPending || purgeMany.isPending
+  const deleting = remove.isPending || removeMany.isPending || purge.isPending || purgeMany.isPending || restoreMany.isPending
   const batchPermanent = batchTargets[0]?.deleted === true
   const selectedIds = useMemo(() => new Set(selectedProjects.keys()), [selectedProjects])
 
@@ -121,13 +136,15 @@ export default function PipelinePage() {
 
   // ---------- 列配置 ----------
   const availableColumns = useMemo(
-    () => buildAvailableColumns(customDefsQ.data ?? []),
-    [customDefsQ.data],
+    () => buildAvailableColumns((customDefsQ.data ?? []).filter((def) => !track || track === '__unclassified__' || !def.applicableTracks?.length || def.applicableTracks.includes(track))),
+    [customDefsQ.data, track],
   )
-  const [columnStates, setColumnStates] = useState<ColumnState[] | null>(null)
+  const [columnsByTrack, setColumnsByTrack] = useState<Record<string, ColumnState[]>>({})
+  const columnStates = columnsByTrack[track] ?? null
+  const setColumnStates = (states: ColumnState[]) => setColumnsByTrack((previous) => ({ ...previous, [track]: states }))
   // 与可用列对齐：剔除已删除的列、追加新增列（自定义字段增删时自动生效）
   const effectiveStates = useMemo(() => {
-    const base = columnStates ?? loadColumnStates(availableColumns)
+    const base = columnStates ?? loadColumnStates(availableColumns, track)
     const keys = new Set(availableColumns.map((c) => c.key))
     const merged = base.filter((s) => keys.has(s.key))
     const present = new Set(merged.map((s) => s.key))
@@ -135,11 +152,11 @@ export default function PipelinePage() {
       if (!present.has(c.key)) merged.push({ key: c.key, visible: c.defaultVisible })
     }
     return merged
-  }, [availableColumns, columnStates])
+  }, [availableColumns, columnStates, track])
 
   const updateColumns = (states: ColumnState[]) => {
     setColumnStates(states)
-    saveColumnStates(states)
+    saveColumnStates(states, track)
   }
   const visibleColumns = effectiveStates
     .filter((s) => s.visible)
@@ -170,6 +187,10 @@ export default function PipelinePage() {
     <div className="space-y-4 p-6">
       {/* ---------- 工具栏 ---------- */}
       <div className="flex flex-wrap items-center gap-2">
+        <Select className="w-44" value={solution} onValueChange={(v) => { setSolution(v); setSubSolution('') }} options={solutionTree.solutions.map((s) => ({ value: s.value, label: s.value }))} placeholder="解决方案" clearable clearLabel="全部方案" />
+        <Select className="w-44" value={subSolution} onValueChange={setSubSolution} options={(solutionTree.subMap.get(solution) ?? []).map((s) => ({ value: s.value, label: s.value }))} disabled={!solution} placeholder="细分解决方案" clearable clearLabel="全部细分方案" />
+        <Select className="w-44" value={responsibleId} onValueChange={setResponsibleId} options={(peopleQ.data ?? []).map((p) => ({ value: String(p.id), label: `${p.name}${p.employeeNo ? ` · ${p.employeeNo}` : ''}` }))} placeholder="责任人" clearable clearLabel="全部责任人" />
+        <Input className="w-40" aria-label="HCS状态筛选" placeholder="筛选 HCS 状态" value={hcsStatus} onChange={(e) => setHcsStatus(e.target.value)} />
         <div className="relative w-64">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -192,7 +213,7 @@ export default function PipelinePage() {
           className="w-40"
           value={track}
           onValueChange={setTrack}
-          options={trackOptions}
+          options={[...trackOptions, { value: '__unclassified__', label: '待分类' }]}
           placeholder="赛道"
           clearable
           clearLabel="全部赛道"
@@ -254,8 +275,15 @@ export default function PipelinePage() {
         </div>
       )}
 
+      <div className="flex flex-wrap items-center gap-2 text-sm">
+        <span className="text-xs text-muted-foreground">行动提醒（上海日期 {today}）</span>
+        {[['', '全部'], ['overdue', '逾期'], ['today', '今天'], ['next7', '未来 7 天'], ['unscheduled', '未安排']].map(([value, label]) => <Button key={value} size="sm" variant={(actionRange ?? '') === value ? 'default' : 'outline'} onClick={() => setActionRange((value || undefined) as ProjectListQuery['actionRange'])}>{label}</Button>)}
+        <Button size="sm" variant="ghost" onClick={() => setSort({})}>恢复行动优先排序</Button>
+      </div>
+      <CompleteActionDialog project={actionTarget} onClose={() => setActionTarget(null)} />
       <div className="flex flex-wrap items-center gap-3 text-sm">
         <span aria-live="polite">已选 {selectedProjects.size} 个项目</span>
+        {recycleBin && <Button variant="outline" disabled={!selectedProjects.size || deleting} onClick={() => void restoreMany.mutateAsync([...selectedProjects.keys()]).then((result) => { setSelectedProjects((current) => new Map([...current].filter(([id]) => !result.deletedIds.includes(id)))) }).catch(() => {})}>批量恢复 {selectedProjects.size} 个项目</Button>}
         <Button variant="destructive" disabled={!selectedProjects.size || deleting} onClick={() => setBatchTargets([...selectedProjects.values()])}>
           <Trash2 className="h-4 w-4" />{removeMany.isPending || purgeMany.isPending ? '删除中…' : `${recycleBin ? '批量永久删除' : '批量删除'} ${selectedProjects.size} 个项目`}
         </Button>
@@ -283,6 +311,8 @@ export default function PipelinePage() {
         ) : (
           <ProjectTable
             projects={items}
+            today={today}
+            onCompleteAction={setActionTarget}
             columns={visibleColumns}
             recycleBin={recycleBin}
             selectedIds={selectedIds}

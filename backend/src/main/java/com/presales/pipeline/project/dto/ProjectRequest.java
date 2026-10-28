@@ -9,6 +9,8 @@ import jakarta.validation.constraints.Size;
 import java.math.BigDecimal;
 import java.util.Map;
 import java.util.List;
+import com.presales.pipeline.solution.SolutionSelection;
+import jakarta.validation.Valid;
 
 public record ProjectRequest(
         @Size(max = 128) String externalId,
@@ -27,6 +29,15 @@ public record ProjectRequest(
         @Size(max = 20000) String scenario,
         @Size(max = 20000) String keyRisks,
         @Size(max = 20000) String keyNeeds,
-        @NotNull Map<String, Object> customFields
+        @NotNull Map<String, Object> customFields,
+        java.time.LocalDate nextActionDate,
+        @Size(max=20000) String nextActionNote,
+        @Size(max=255) String securityDirection,
+        @Size(max=100) List<@Valid SolutionSelection> solutions,
+        @Size(max=128) String hcsOpportunityId,
+        @Size(max=100) List<@jakarta.validation.constraints.Positive Long> responsibleIds
 ) {
+    public ProjectRequest(String externalId,String customerName,String projectName,String projectStatus,BigDecimal securityBudget,String solution,String subSolution,List<String> purchasedProducts,String track,String industry,String subIndustry,String scenario,String keyRisks,String keyNeeds,Map<String,Object> customFields,java.time.LocalDate nextActionDate,String nextActionNote,String securityDirection,List<SolutionSelection> solutions){this(externalId,customerName,projectName,projectStatus,securityBudget,solution,subSolution,purchasedProducts,track,industry,subIndustry,scenario,keyRisks,keyNeeds,customFields,nextActionDate,nextActionNote,securityDirection,solutions,null,null);}
+    public ProjectRequest(String externalId,String customerName,String projectName,String projectStatus,BigDecimal securityBudget,String solution,String subSolution,List<String> purchasedProducts,String track,String industry,String subIndustry,String scenario,String keyRisks,String keyNeeds,Map<String,Object> customFields){this(externalId,customerName,projectName,projectStatus,securityBudget,solution,subSolution,purchasedProducts,track,industry,subIndustry,scenario,keyRisks,keyNeeds,customFields,null,null,null,null);}
+    public ProjectRequest(String externalId,String customerName,String projectName,String projectStatus,BigDecimal securityBudget,String solution,String subSolution,List<String> purchasedProducts,String track,String industry,String subIndustry,String scenario,String keyRisks,String keyNeeds,Map<String,Object> customFields,java.time.LocalDate nextActionDate,String nextActionNote,String securityDirection){this(externalId,customerName,projectName,projectStatus,securityBudget,solution,subSolution,purchasedProducts,track,industry,subIndustry,scenario,keyRisks,keyNeeds,customFields,nextActionDate,nextActionNote,securityDirection,null);}
 }

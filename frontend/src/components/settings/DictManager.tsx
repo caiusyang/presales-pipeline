@@ -12,7 +12,7 @@ import { Label } from '@/components/ui/label'
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { EmptyState } from '@/components/common/EmptyState'
 import { cn } from '@/lib/utils'
-import { PRODUCT_CATALOG } from '@/lib/products'
+import { PRODUCT_CATALOG, productName, productDefinitions } from '@/lib/products'
 import { dictionaryKinds, dictionaryValueTarget, type DictKind, type DictionaryKind } from './dictKinds'
 import { DictionaryImportDialog } from './DictionaryImportDialog'
 
@@ -156,8 +156,9 @@ export function DictManager() {
     : rows.find((row) => String(row.node.id) === parentChoice)?.node ?? null
   const addingProduct = kind === 'solution' && selectedParent?.type === 'sub_solution'
   const productOptions = PRODUCT_CATALOG
+    .filter((code) => productDefinitions().some((p) => p.code === code && p.enabled))
     .filter((product) => !(selectedParent?.children ?? []).some((child) => child.value === product))
-    .map((product) => ({ value: product, label: product }))
+    .map((product) => ({ value: product, label: productName(product) }))
   const categorySaving = categoryMutations.create.isPending || categoryMutations.update.isPending
   const targetLabel = selectedParent
     ? `${currentKind?.label ?? kind} / ${selectedParent.type === 'sub_solution' ? `${rows.find((row) => row.node.id === selectedParent.parentId)?.node.value ?? ''} / ` : ''}${selectedParent.value}`
@@ -195,7 +196,7 @@ export function DictManager() {
       </div>
 
       {/* 新增 */}
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2" hidden={kind === 'track'}>
         {addingProduct ? (
           <Select
             className="w-64"
@@ -307,7 +308,7 @@ export function DictManager() {
                       size="icon-sm"
                       variant="ghost"
                       title="重命名"
-                      disabled={row.node.type === 'product'}
+                      disabled={row.node.type === 'product' || row.node.type === 'track'}
                       onClick={() => setEditing({ id: row.node.id, value: row.node.value })}
                     >
                       <Pencil className="h-4 w-4" />
@@ -316,6 +317,7 @@ export function DictManager() {
                       size="icon-sm"
                       variant="ghost"
                       title="删除"
+                      disabled={row.node.type === 'track'}
                       onClick={() => setToDelete(row.node)}
                     >
                       <Trash2 className="h-4 w-4 text-destructive" />

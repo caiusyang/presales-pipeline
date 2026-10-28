@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import dayjs from 'dayjs'
 import { toast } from 'sonner'
-import * as XLSX from 'xlsx'
+import { downloadExportXlsxAsync } from './excelAsync'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
@@ -22,6 +22,7 @@ import { ImportRowEditor } from './ImportRowEditor'
 interface Props {
   parsed: ParsedSheet; columnMap: Record<string, string>; valueRules: ValueRule[];
   mappingId: ID | null; mappingName: string; pendingFields: PendingCustomField[];
+  defaultYear?: number;
   session: ReviewSession; onSessionChange: (session: ReviewSession) => void;
   onMappingSaved: (id: ID, name: string, rules: ValueRule[]) => void; active: boolean; onBack: () => void; onReset: () => void;
 }
@@ -32,11 +33,11 @@ export function importPreflightConfiguration(dictionaries: DictNode[] | undefine
     dictionaries: dictionaries == null ? null : flattenDicts(dictionaries).sort((a, b) => a.id - b.id)
       .map(({ id, type, value, parentId, sortOrder }) => ({ id, type, value, parentId, sortOrder })),
     definitions: definitions == null ? null : [...definitions].sort((a, b) => a.fieldKey.localeCompare(b.fieldKey))
-      .map(({ fieldKey, label, fieldType, required, options, dictionaryType }) => ({ fieldKey, label, fieldType, required, options, dictionaryType: dictionaryType ?? null })),
+      .map(({ fieldKey, label, fieldType, required, options, dictionaryType, applicableTracks }) => ({ fieldKey, label, fieldType, required, options, dictionaryType: dictionaryType ?? null, applicableTracks })),
   }
 }
 
-export function StepConfirm({ parsed, columnMap, valueRules, mappingId, mappingName, pendingFields, session, onSessionChange, onMappingSaved, active, onBack, onReset }: Props) {
+export function StepConfirm({ parsed, columnMap, valueRules, mappingId, mappingName, pendingFields, defaultYear, session, onSessionChange, onMappingSaved, active, onBack, onReset }: Props) {
   const importer = useImportRecords(), mappings = useMappingMutations()
   const dictionaries = useDictionaries(), customs = useCustomFieldDefs(), customers = useCustomers('')
   const today = useMemo(() => dayjs().format('YYYY-MM-DD'), [])
@@ -52,18 +53,18 @@ export function StepConfirm({ parsed, columnMap, valueRules, mappingId, mappingN
   const generation = useRef(0)
   const transformed = useMemo(() => buildImportRecords({
     headers: parsed.headers, rows: parsed.rows.map((row, i) => row.map((cell, j) => session.cells[parsed.dataStartRow + i]?.[j] ?? cell)),
-    columnMap, valueRules, today, dataStartRow: parsed.dataStartRow,
-  }), [parsed, columnMap, valueRules, session.cells, today])
+    columnMap, valueRules, today, defaultYear, dataStartRow: parsed.dataStartRow,
+  }), [parsed, columnMap, valueRules, session.cells, today, defaultYear])
   const records = useMemo(() => transformed.records.map((r) => applyEdits(applyEdits(r, session.bulk[r.sourceRow!]), session.edits[r.sourceRow!])), [transformed, session.bulk, session.edits])
   const originalByRow = useMemo(() => new Map(buildImportRecords({ headers: parsed.headers, rows: parsed.rows,
-    columnMap, valueRules: valueRules.filter((rule) => rule.type !== 'exact' || !rule.matchField), today, dataStartRow: parsed.dataStartRow,
-  }).records.map((record) => [record.sourceRow!, record])), [parsed, columnMap, valueRules, today])
+    columnMap, valueRules: valueRules.filter((rule) => rule.type !== 'exact' || !rule.matchField), today, defaultYear, dataStartRow: parsed.dataStartRow,
+  }).records.map((record) => [record.sourceRow!, record])), [parsed, columnMap, valueRules, today, defaultYear])
   const remaining = useMemo(() => pendingImportRecords(records, session), [records, session.completed, session.excluded])
   const previewRecords = useMemo(() => recordsForPreflight(remaining, transformed.problems), [remaining, transformed.problems])
   const configurationReady = !dictionaries.isPending && !customs.isPending && !dictionaries.isError && !customs.isError
   const configurationError = dictionaries.isError || customs.isError
   const configuration = importPreflightConfiguration(dictionaries.data, customs.data)
-  const signature = JSON.stringify({ remaining, problems: transformed.problems, pendingFields, mappingId, retry, configuration })
+  const signature = JSON.stringify({ remaining, problems: transformed.problems, pendingFields, mappingId, defaultYear, retry, configuration })
   const currentPreview = configurationReady && preview?.key === signature ? preview.result : null
   const defs: CustomFieldDef[] = useMemo(() => {
     const result = [...(customs.data ?? [])]
@@ -132,9 +133,7 @@ export function StepConfirm({ parsed, columnMap, valueRules, mappingId, mappingN
       const original = parsed.rows[r.sourceRow - parsed.dataStartRow]
       return [r.sourceRow, ...original, ...original.map((cell, j) => session.cells[r.sourceRow]?.[j] ?? cell), JSON.stringify(r.result?.effectiveFields ?? r.record.fields), r.issues.map((i) => i.message).join('；') || (r.ready ? '已通过，尚未导入' : '等待预检')]
     })
-    const workbook = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([headers, ...data]), '待处理清单')
-    XLSX.writeFile(workbook, '导入待处理清单.xlsx')
+    void downloadExportXlsxAsync(headers.map((title, index) => ({ key: String(index), title })), data.map((row) => Object.fromEntries(row.map((value, index) => [String(index), value]))), '待处理清单', '导入待处理清单.xlsx').catch((error) => toast.error(error.message))
   }
   const saveRules = async (name: string) => {
     const input = { name, columnMap, valueRules: [...valueRules, ...session.rules] }
@@ -211,6 +210,7 @@ export function StepConfirm({ parsed, columnMap, valueRules, mappingId, mappingN
         <TableCell className="min-w-40"><div>{r.result?.customerName || r.record.fields.customerName || '客户待补齐'}</div><div className="text-xs text-muted-foreground">{r.result?.projectName || r.record.fields.projectName || '项目待补齐'}</div>
           {!r.record.fields.customerName && r.result?.customerName && <div className="text-xs text-sky-700">沿用已有项目客户</div>}</TableCell>
         <TableCell className="min-w-56 max-w-lg whitespace-normal"><ul className="space-y-1 text-xs text-destructive">{r.issues.map((issue, i) => <li key={i}>{issue.message}</li>)}</ul>
+          {r.record.progress.length > 0 && <details className="mt-1 text-xs"><summary>预检进展日期（{r.record.progress.length} 条）</summary>{r.record.progress.map((entry, index) => <p className="whitespace-pre-wrap" key={index}>{entry.logDate}：{entry.content}</p>)}</details>}
           {Object.entries({ ...session.bulk[r.sourceRow], ...session.edits[r.sourceRow] }).map(([key, value]) => <div key={key} className="text-xs text-sky-700">{fieldLabel(key, defs)}：{valueText(fieldValue(originalByRow.get(r.sourceRow)?.fields ?? {}, key)) || '空'} → {valueText(value) || '空'}</div>)}</TableCell>
         <TableCell><Button size="sm" variant="outline" disabled={executing} onClick={() => setEditing(r.sourceRow)}>逐行修正</Button></TableCell>
       </TableRow>)}{pageRows.length === 0 && <TableRow><TableCell colSpan={6} className="py-8 text-center text-muted-foreground">{rows.length === 0 ? '本次导入清单已处理完成' : '没有符合筛选条件的记录'}</TableCell></TableRow>}</TableBody></Table></div>

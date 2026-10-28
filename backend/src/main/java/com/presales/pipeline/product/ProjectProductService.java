@@ -14,16 +14,19 @@ import java.util.Set;
 public class ProjectProductService {
 
     private final ProjectProductRepository repository;
+    private final ProductCatalog catalog;
 
-    public ProjectProductService(ProjectProductRepository repository) {
+    public ProjectProductService(ProjectProductRepository repository,ProductCatalog catalog) {
+        this.catalog=catalog;
         this.repository = repository;
     }
 
     @Transactional(readOnly = true)
     public List<ProjectProductResponse> list(Long projectId) {
         Map<String, Integer> order = new HashMap<>();
-        for (int index = 0; index < ProductCatalog.CODES.size(); index++) {
-            order.put(ProductCatalog.CODES.get(index), index);
+        var codes=catalog.codes();
+        for (int index = 0; index < codes.size(); index++) {
+            order.put(codes.get(index), index);
         }
         return repository.findAllByProjectIdOrderByIdAsc(projectId).stream()
                 .sorted((left, right) -> Integer.compare(
@@ -35,19 +38,19 @@ public class ProjectProductService {
 
     @Transactional
     public void sync(Project project, List<String> productCodes) {
-        List<String> normalized = ProductCatalog.normalizeAll(productCodes);
+        List<String> normalized = catalog.normalizeAll(productCodes);
         Set<String> desired = Set.copyOf(normalized);
-        List<ProjectProduct> existing = repository.findAllByProjectIdOrderByIdAsc(project.getId());
+        List<com.presales.pipeline.importing.ImportBatchLookup.Owned> existing=com.presales.pipeline.importing.ImportBatchLookup.fresh(project)?com.presales.pipeline.importing.ImportBatchLookup.current().products().getOrDefault(project.getId(),List.of()):repository.findAllByProjectIdOrderByIdAsc(project.getId()).stream().map(p->new com.presales.pipeline.importing.ImportBatchLookup.Owned(p.getId(),p.getProductCode())).toList();
 
-        List<ProjectProduct> removed = existing.stream()
-                .filter(record -> !desired.contains(record.getProductCode()))
+        var removed = existing.stream()
+                .filter(record -> !desired.contains(record.code()))
                 .toList();
         if (!removed.isEmpty()) {
-            repository.deleteAll(removed);
+            repository.deleteAllByIdInBatch(removed.stream().map(com.presales.pipeline.importing.ImportBatchLookup.Owned::id).toList());
         }
 
         Set<String> present = existing.stream()
-                .map(ProjectProduct::getProductCode)
+                .map(com.presales.pipeline.importing.ImportBatchLookup.Owned::code)
                 .filter(desired::contains)
                 .collect(java.util.stream.Collectors.toSet());
         for (String productCode : normalized) {

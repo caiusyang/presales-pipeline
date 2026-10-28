@@ -74,12 +74,14 @@ public class ExportService {
     private final ProjectRepository projectRepository;
     private final RevenueRepository revenueRepository;
     private final ProgressLogRepository progressRepository;
+    private final ProductCatalog productCatalog;
 
     public ExportService(ConfigService configService,
                          CustomFieldDefinitionRepository customFieldRepository,
                          ProjectRepository projectRepository,
                          RevenueRepository revenueRepository,
-                         ProgressLogRepository progressRepository) {
+                         ProgressLogRepository progressRepository,ProductCatalog productCatalog) {
+        this.productCatalog=productCatalog;
         this.configService = configService;
         this.customFieldRepository = customFieldRepository;
         this.projectRepository = projectRepository;
@@ -91,7 +93,9 @@ public class ExportService {
     public List<ExportFieldResponse> availableFields(String requestedScope) {
         String scope = ExportScope.normalize(requestedScope);
         List<ExportFieldResponse> fields = new ArrayList<>(STANDARD_FIELDS.get(scope));
+        if(isProjectScope(scope)){fields.add(field("lastFollowUpAt","最后跟进时间"));fields.add(field("nextActionDate","下次行动日期"));fields.add(field("nextActionNote","下次行动内容"));fields.add(field("securityDirection","安全方向"));fields.add(field("solutions","方案集合（JSON）"));}
         if (isProjectScope(scope)) {
+            fields.add(field("responsibles","责任人（含来源与岗位）"));fields.add(field("hcsOpportunityId","HCS机会点编号"));fields.add(field("hcsStatus","HCS状态"));fields.add(field("lastSyncAt","最近同步时间"));
             int productIndex = 0;
             while (productIndex < fields.size() && !"subSolution".equals(fields.get(productIndex).key())) {
                 productIndex++;
@@ -99,15 +103,12 @@ public class ExportService {
             if (productIndex < fields.size()) {
                 productIndex++;
             }
-            fields.addAll(productIndex, ProductCatalog.CODES.stream()
-                    .map(code -> field(ProductCatalog.exportFieldKey(code), code))
+            fields.addAll(productIndex, productCatalog.codes().stream()
+                    .map(code -> field(ProductCatalog.exportFieldKey(code), productCatalog.name(code)))
                     .toList());
         }
         if (ExportScope.COMBINED.equals(scope)) {
-            revenueRepository.findActiveInRange(null, null).stream()
-                    .map(Revenue::getMonth)
-                    .distinct()
-                    .sorted()
+            revenueRepository.activeMonths().stream()
                     .forEach(month -> fields.add(field("revenue." + month, month + "收入（万元）")));
             fields.add(field("revenueTotal", "收入合计（万元）"));
             fields.add(field("progressSummary", "进展日志（日期：内容）"));
@@ -144,6 +145,12 @@ public class ExportService {
         };
         return new ExportResponse(resolved.scope(), resolved.columns(), rows, rows.size(),
                 LocalDateTime.now(BUSINESS_ZONE));
+    }
+
+    @Transactional(readOnly=true)
+    public List<Long> projectIdsForExport(ExportRequest request) {
+        resolve(request);
+        return filteredProjects(request.filters()==null?new ExportFilters(null,null,null,null,null,null,null,null):request.filters()).stream().map(Project::getId).toList();
     }
 
     private ResolvedExport resolve(ExportRequest request) {
@@ -189,9 +196,9 @@ public class ExportService {
         Set<Long> ids = projects.stream().map(Project::getId).collect(Collectors.toSet());
         Map<Long, Map<String, BigDecimal>> monthlyRevenue = new HashMap<>();
         Map<Long, BigDecimal> totals = new HashMap<>();
-        for (Revenue revenue : revenueRepository.findActiveInRange(startMonth, endMonth)) {
+        for (Revenue revenue : ids.isEmpty()?List.<Revenue>of():revenueRepository.findAllByProjectIdInAndDeletedFalse(new ArrayList<>(ids))) {
             Long projectId = revenue.getProject().getId();
-            if (!ids.contains(projectId)) {
+            if (!ids.contains(projectId) || startMonth!=null&&revenue.getMonth().compareTo(startMonth)<0 || endMonth!=null&&revenue.getMonth().compareTo(endMonth)>0) {
                 continue;
             }
             monthlyRevenue.computeIfAbsent(projectId, ignored -> new HashMap<>())
@@ -199,7 +206,7 @@ public class ExportService {
             totals.merge(projectId, revenue.getAmount(), BigDecimal::add);
         }
 
-        Map<Long, List<ProgressLog>> progressByProject = progressRepository.findAllActiveWithProject().stream()
+        Map<Long, List<ProgressLog>> progressByProject = (ids.isEmpty()?List.<ProgressLog>of():progressRepository.findActiveByProjectIds(new ArrayList<>(ids))).stream()
                 .filter(log -> ids.contains(log.getProject().getId()))
                 .filter(log -> inProgressRange(log, filters, startMonth, endMonth))
                 .collect(Collectors.groupingBy(log -> log.getProject().getId(), LinkedHashMap::new, Collectors.toList()));
@@ -236,11 +243,7 @@ public class ExportService {
         List<Project> projects = filteredProjects(filters);
         Set<Long> ids = projects.stream().map(Project::getId).collect(Collectors.toSet());
         Map<Long, BigDecimal> totals = new HashMap<>();
-        for (Revenue revenue : revenueRepository.findActiveInRange(startMonth, endMonth)) {
-            if (ids.contains(revenue.getProject().getId())) {
-                totals.merge(revenue.getProject().getId(), revenue.getAmount(), BigDecimal::add);
-            }
-        }
+        if(!ids.isEmpty())for (var total : revenueRepository.totals(new ArrayList<>(ids),startMonth,endMonth)) totals.put(total.getProjectId(),total.getAmount());
         return projects.stream().map(project -> row(columns,
                 key -> projectValue(project, totals.getOrDefault(project.getId(), BigDecimal.ZERO), key))).toList();
     }
@@ -251,8 +254,8 @@ public class ExportService {
                                                    String endMonth) {
         Set<Long> ids = filteredProjects(filters).stream().map(Project::getId)
                 .collect(Collectors.toSet());
-        return revenueRepository.findActiveInRange(startMonth, endMonth).stream()
-                .filter(revenue -> ids.contains(revenue.getProject().getId()))
+        return (ids.isEmpty()?List.<Revenue>of():revenueRepository.findAllByProjectIdInAndDeletedFalse(new ArrayList<>(ids))).stream()
+                .filter(revenue -> (startMonth==null||revenue.getMonth().compareTo(startMonth)>=0)&&(endMonth==null||revenue.getMonth().compareTo(endMonth)<=0))
                 .map(revenue -> row(columns, key -> revenueValue(revenue, key)))
                 .toList();
     }
@@ -260,8 +263,7 @@ public class ExportService {
     private List<Map<String, Object>> progressRows(List<ExportColumnRequest> columns, ExportFilters filters) {
         Set<Long> ids = filteredProjects(filters).stream().map(Project::getId)
                 .collect(Collectors.toSet());
-        return progressRepository.findAllActiveWithProject().stream()
-                .filter(log -> ids.contains(log.getProject().getId()))
+        return (ids.isEmpty()?List.<ProgressLog>of():progressRepository.findActiveByProjectIds(new ArrayList<>(ids))).stream()
                 .filter(log -> filters.startDate() == null || !log.getLogDate().isBefore(filters.startDate()))
                 .filter(log -> filters.endDate() == null || !log.getLogDate().isAfter(filters.endDate()))
                 .map(log -> row(columns, key -> progressValue(log, key)))
@@ -272,16 +274,14 @@ public class ExportService {
         Set<Long> selectedIds = filters.projectIds() == null
                 ? Set.of() : new LinkedHashSet<>(filters.projectIds());
         String keyword = filters.keyword() == null ? null : filters.keyword().trim().toLowerCase(Locale.ROOT);
-        return projectRepository.findAllByDeletedFalseOrderByIdAsc().stream()
-                .filter(project -> selectedIds.isEmpty() || selectedIds.contains(project.getId()))
-                .filter(project -> filters.industry() == null || filters.industry().isBlank()
-                        || filters.industry().trim().equals(project.getIndustry()))
-                .filter(project -> filters.track() == null || filters.track().isBlank()
-                        || filters.track().trim().equals(project.getTrack()))
-                .filter(project -> keyword == null || keyword.isBlank()
-                        || project.getCustomerName().toLowerCase(Locale.ROOT).contains(keyword)
-                        || project.getProjectName().toLowerCase(Locale.ROOT).contains(keyword))
-                .toList();
+        return projectRepository.findAll((root,query,cb)->{
+            List<jakarta.persistence.criteria.Predicate> predicates=new ArrayList<>();predicates.add(cb.isFalse(root.get("deleted")));
+            if(!selectedIds.isEmpty())predicates.add(root.get("id").in(selectedIds));
+            if(filters.industry()!=null&&!filters.industry().isBlank())predicates.add(cb.equal(root.get("industry"),filters.industry().trim()));
+            if(filters.track()!=null&&!filters.track().isBlank())predicates.add(cb.equal(root.get("track"),filters.track().trim()));
+            if(keyword!=null&&!keyword.isBlank())predicates.add(cb.or(cb.like(cb.lower(root.get("customerName")),"%"+keyword+"%"),cb.like(cb.lower(root.get("projectName")),"%"+keyword+"%")));
+            return cb.and(predicates.toArray(jakarta.persistence.criteria.Predicate[]::new));
+        },org.springframework.data.domain.Sort.by("id"));
     }
 
     private Map<String, Object> row(List<ExportColumnRequest> columns,
@@ -297,11 +297,20 @@ public class ExportService {
         if (key.startsWith("custom.")) {
             return project.getCustomFields().get(key.substring("custom.".length()));
         }
-        String productCode = ProductCatalog.exportCode(key);
+        String productCode = productCatalog.exportCode(key);
         if (productCode != null) {
             return project.getPurchasedProducts().contains(productCode) ? "已购" : "";
         }
         return switch (key) {
+            case "lastFollowUpAt" -> project.getLastFollowUpAt();
+            case "nextActionDate" -> project.getNextActionDate();
+            case "nextActionNote" -> project.getNextActionNote();
+            case "securityDirection" -> project.getSecurityDirection();
+            case "solutions" -> solutionsJson(project);
+            case "hcsOpportunityId" -> project.getHcsOpportunityId();
+            case "hcsStatus" -> project.getHcsStatus();
+            case "lastSyncAt" -> project.getLastSyncAt();
+            case "responsibles" -> project.getResponsibles().stream().map(r->r.name()+"（"+r.source()+(r.role()==null?"":" / "+r.role())+"）").collect(Collectors.joining("、"));
             case "id" -> project.getId();
             case "externalId" -> project.getExternalId();
             case "customerName" -> project.getCustomerName();
@@ -357,20 +366,21 @@ public class ExportService {
     private static ExportFieldResponse field(String key, String title) {
         return new ExportFieldResponse(key, title);
     }
+    private String solutionsJson(Project project){try{return new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(project.getSolutions());}catch(com.fasterxml.jackson.core.JsonProcessingException error){throw new IllegalStateException(error);}}
 
     private static boolean isProjectScope(String scope) {
         return ExportScope.COMBINED.equals(scope) || ExportScope.PROJECTS.equals(scope);
     }
 
-    private static List<ExportColumnRequest> expandLegacyProductColumn(String scope,
+    private List<ExportColumnRequest> expandLegacyProductColumn(String scope,
                                                                         List<ExportColumnRequest> columns) {
         if (columns == null || !isProjectScope(scope)) {
             return columns;
         }
         return columns.stream()
                 .flatMap(column -> "purchasedProducts".equals(column.key())
-                        ? ProductCatalog.CODES.stream().map(code ->
-                                new ExportColumnRequest(ProductCatalog.exportFieldKey(code), code))
+                        ? productCatalog.codes().stream().map(code ->
+                                new ExportColumnRequest(ProductCatalog.exportFieldKey(code), productCatalog.name(code)))
                         : java.util.stream.Stream.of(column))
                 .toList();
     }

@@ -8,7 +8,8 @@ import { Select } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
-import { MAX_IMPORT_FILE_BYTES, parseExcelFile, type ParsedSheet } from '@/components/impexp/excel'
+import { MAX_IMPORT_FILE_BYTES, type ParsedSheet } from '@/components/impexp/excel'
+import { parseExcelFileAsync } from '@/components/impexp/excelAsync'
 import { useImportDictionaryValues } from '@/hooks/queries'
 import {
   defaultDictionaryValueColumn,
@@ -85,7 +86,7 @@ export function DictionaryImportDialog({ open, onOpenChange, target }: Props) {
     const version = requestVersion.current
     setOperation('parsing')
     try {
-      const parsed = await parseExcelFile(file)
+      const parsed = await parseExcelFileAsync(file)
       if (version !== requestVersion.current) return
       setSheet(parsed)
       setFileName(file.name)

@@ -5,11 +5,14 @@ import { API_MODE } from '@/api'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { useAuth } from '@/auth/AuthContext'
+import { TaskCenter } from '@/components/common/TaskCenter'
+import { useProductCatalog } from '@/hooks/queries'
 
 const NAV = [
   { to: '/', label: '项目管道', icon: LayoutGrid, end: true },
   { to: '/customers', label: '客户分析', icon: Users },
   { to: '/revenue', label: '收入统计', icon: BarChart3 },
+  { to: '/solutions', label: '解决方案统计', icon: BarChart3 },
   { to: '/import', label: '导入', icon: Upload },
   { to: '/export', label: '导出', icon: Download },
   { to: '/settings', label: '配置', icon: Settings },
@@ -17,6 +20,7 @@ const NAV = [
 
 export function AppLayout() {
   const { user, logout } = useAuth()
+  const catalog = useProductCatalog()
   return (
     <div className="flex h-screen overflow-hidden">
       {/* 侧边栏 */}
@@ -63,7 +67,8 @@ export function AppLayout() {
 
       {/* 主区域 */}
       <main className="flex-1 overflow-y-auto bg-muted/30">
-        <Outlet />
+        {catalog.isPending ? <p className="p-6">正在加载产品目录…</p> : catalog.isError ? <div className="p-6">产品目录加载失败，暂不允许使用旧目录录入。<Button onClick={() => void catalog.refetch()}>重新加载</Button></div> : <Outlet />}
+        <TaskCenter />
       </main>
     </div>
   )

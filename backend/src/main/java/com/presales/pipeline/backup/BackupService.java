@@ -49,6 +49,12 @@ public class BackupService {
     private final ExportTemplateRepository exportTemplateRepository;
     private final CustomFieldDefinitionRepository customFieldRepository;
     private final ChangeLogRepository changeLogRepository;
+    private final com.presales.pipeline.tasks.JobStore jobStore;
+    private final com.presales.pipeline.product.ProductDefinitionRepository products;
+    private final com.presales.pipeline.solution.ProjectSolutionRepository solutions;
+    private final com.presales.pipeline.migration.MigrationIssueRepository migrationIssues;
+    private final com.presales.pipeline.people.PersonRepository people;
+    private final com.presales.pipeline.people.ProjectPersonRepository responsibles;
 
     public BackupService(ProjectRepository projectRepository,
                          RevenueRepository revenueRepository,
@@ -58,7 +64,10 @@ public class BackupService {
                          ImportMappingRepository importMappingRepository,
                          ExportTemplateRepository exportTemplateRepository,
                          CustomFieldDefinitionRepository customFieldRepository,
-                         ChangeLogRepository changeLogRepository, DictionaryCategoryRepository categoryRepository) {
+                         ChangeLogRepository changeLogRepository, DictionaryCategoryRepository categoryRepository,com.presales.pipeline.tasks.JobStore jobStore,com.presales.pipeline.product.ProductDefinitionRepository products,com.presales.pipeline.solution.ProjectSolutionRepository solutions,com.presales.pipeline.migration.MigrationIssueRepository migrationIssues,com.presales.pipeline.people.PersonRepository people,com.presales.pipeline.people.ProjectPersonRepository responsibles) {
+        this.people=people;this.responsibles=responsibles;
+        this.products=products;this.solutions=solutions;this.migrationIssues=migrationIssues;
+        this.jobStore=jobStore;
         this.projectRepository = projectRepository;
         this.revenueRepository = revenueRepository;
         this.progressRepository = progressRepository;
@@ -74,6 +83,12 @@ public class BackupService {
     @Transactional(readOnly = true)
     public BackupResponse exportAll() {
         Map<String, List<Map<String, Object>>> tables = new LinkedHashMap<>();
+        tables.putAll(jobStore.backup());
+        tables.put("responsible_people",people.findAll(Sort.by("id")).stream().map(p->{Map<String,Object> row=base(p);row.put("name",p.getName());row.put("employeeNo",p.getEmployeeNo());row.put("account",p.getAccount());row.put("aliases",p.getAliases());row.put("enabled",p.isEnabled());return row;}).toList());
+        tables.put("project_responsibles",responsibles.findAll(Sort.by("id")).stream().map(r->{Map<String,Object> row=base(r);row.put("projectId",r.project.getId());row.put("personId",r.person.getId());row.put("source",r.source);row.put("role",r.role);return row;}).toList());
+        tables.put("product_catalog",products.findAll(Sort.by("id")).stream().map(p->{Map<String,Object> row=base(p);row.put("code",p.code);row.put("name",p.name);row.put("aliases",p.aliases);row.put("applicableTracks",p.applicableTracks);row.put("sortOrder",p.sortOrder);row.put("enabled",p.enabled);return row;}).toList());
+        tables.put("project_solutions",solutions.findAll(Sort.by("id")).stream().map(s->{Map<String,Object> row=base(s);row.put("projectId",s.project.getId());row.put("solutionId",s.solution.getId());row.put("subSolutionId",s.subSolution==null?null:s.subSolution.getId());return row;}).toList());
+        tables.put("migration_issues",migrationIssues.findAll(Sort.by("id")).stream().map(i->{Map<String,Object> row=new LinkedHashMap<>();row.put("id",i.id);row.put("projectId",i.projectId);row.put("area",i.area);row.put("reason",i.reason);row.put("originalValue",i.originalValue);row.put("resolved",i.resolved);row.put("createdAt",i.createdAt);return row;}).toList());
         tables.put("projects", projectRepository.findAll(Sort.by("id")).stream().map(this::projectRow).toList());
         tables.put("revenues", revenueRepository.findAll(Sort.by("id")).stream().map(this::revenueRow).toList());
         tables.put("progress_logs", progressRepository.findAll(Sort.by("id")).stream().map(this::progressRow).toList());
@@ -92,14 +107,18 @@ public class BackupService {
     private Map<String, Object> projectRow(Project project) {
         Map<String, Object> row = softBase(project);
         row.put("externalId", project.getExternalId());
+        row.put("hcsOpportunityId",project.getHcsOpportunityId());row.put("hcsStatus",project.getHcsStatus());row.put("lastSyncAt",project.getLastSyncAt());row.put("responsibleIds",project.getResponsibleIds());
+        row.put("lastFollowUpAt",project.getLastFollowUpAt());row.put("nextActionDate",project.getNextActionDate());row.put("nextActionNote",project.getNextActionNote());
         row.put("customerName", project.getCustomerName());
         row.put("projectName", project.getProjectName());
         row.put("projectStatus", project.getProjectStatus());
         row.put("securityBudget", project.getSecurityBudget());
         row.put("solution", project.getSolution());
         row.put("subSolution", project.getSubSolution());
+        row.put("solutions",project.getSolutions());
         row.put("purchasedProducts", project.getPurchasedProducts());
         row.put("track", project.getTrack());
+        row.put("securityDirection",project.getSecurityDirection());
         row.put("industry", project.getIndustry());
         row.put("subIndustry", project.getSubIndustry());
         row.put("scenario", project.getScenario());
@@ -152,6 +171,7 @@ public class BackupService {
         Map<String, Object> row = softBase(mapping);
         row.put("name", mapping.getName());
         row.put("columnMap", mapping.getColumnMap());
+        row.put("applicableTrack",mapping.getApplicableTrack());
         row.put("valueRules", mapping.getValueRules());
         return row;
     }
@@ -160,6 +180,7 @@ public class BackupService {
         Map<String, Object> row = softBase(template);
         row.put("name", template.getName());
         row.put("scope", template.getScope());
+        row.put("applicableTrack",template.getApplicableTrack());
         row.put("columns", template.getColumns());
         return row;
     }
@@ -172,6 +193,7 @@ public class BackupService {
         row.put("required", definition.isRequired());
         row.put("options", definition.getOptions());
         row.put("dictionaryType", definition.getDictionaryType());
+        row.put("applicableTracks",definition.getApplicableTracks());
         row.put("sortOrder", definition.getSortOrder());
         return row;
     }

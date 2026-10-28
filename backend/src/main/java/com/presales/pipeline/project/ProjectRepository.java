@@ -16,11 +16,14 @@ public interface ProjectRepository extends JpaRepository<Project, Long>, JpaSpec
     Optional<Project> findByIdForUpdate(@Param("id") Long id);
 
     Optional<Project> findByIdAndDeletedFalse(Long id);
+    @Lock(LockModeType.PESSIMISTIC_WRITE) @Query("select p from Project p where lower(p.externalId)=lower(:externalId)") Optional<Project> findByExternalIdForUpdate(String externalId);
+    @Lock(LockModeType.PESSIMISTIC_WRITE) @Query("select p from Project p where p.deleted=false and lower(p.customerName)=lower(:customer) and lower(p.projectName)=lower(:name)") Optional<Project> findActiveByNameForUpdate(String customer,String name);
     Optional<Project> findByExternalId(String externalId);
     Optional<Project> findFirstByExternalIdAndDeletedFalse(String externalId);
     Optional<Project> findFirstByCustomerNameIgnoreCaseAndProjectNameIgnoreCaseAndDeletedFalse(
             String customerName, String projectName);
     boolean existsByExternalIdAndIdNot(String externalId, Long id);
+    boolean existsByHcsOpportunityIdAndIdNot(String hcsOpportunityId,Long id);
     boolean existsByCustomerNameIgnoreCaseAndProjectNameIgnoreCaseAndDeletedFalseAndIdNot(
             String customerName, String projectName, Long id);
     List<Project> findAllByDeletedFalseOrderByIdAsc();

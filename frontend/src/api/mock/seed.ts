@@ -11,12 +11,21 @@ import type {
 } from '@/types'
 import { PROJECT_STATUSES } from '@/types'
 import { PRODUCT_CATALOG, type ProductCode } from '@/lib/products'
+import type { TaskState } from './jobs'
+import type { MigrationIssue } from '@/api/types'
+import type { ProductDefinition } from '@/lib/products'
+import type { Person } from '@/lib/people'
+import { businessDate } from '@/lib/actions'
 
 // ============================================================
 // Mock 种子数据：字典 / 自定义字段 / 模板 / 项目及其收入、进展
 // ============================================================
 
 export interface MockDB {
+  people?: Person[]
+  productCatalog?: ProductDefinition[]
+  tasks?: TaskState
+  migrationIssues?: MigrationIssue[]
   seq: number
   projects: Project[]
   revenues: Revenue[]
@@ -158,12 +167,14 @@ export function seedDB(): MockDB {
     { id: seq++, type: 'track', label: '赛道', builtIn: true, sortOrder: 10 },
     { id: seq++, type: 'industry', label: '行业', builtIn: true, sortOrder: 20 },
     { id: seq++, type: 'solution', label: '方案与产品', builtIn: true, sortOrder: 30 },
+    { id: seq++, type: 'security_direction', label: '安全方向', builtIn: true, sortOrder: 40 },
     { id: seq++, type: 'custom_stage', label: '所处阶段', builtIn: false, sortOrder: 40 },
   ]
 
   // 字典（子行业为 sub_industry 类型，parentId 指向行业）
   const dictionaries: DictNode[] = []
-  TRACKS.forEach((t, i) => dictionaries.push({ id: seq++, type: 'track', value: t, parentId: null, sortOrder: (i + 1) * 10 }))
+  ;['HCS', '公有云'].forEach((t, i) => dictionaries.push({ id: seq++, type: 'track', value: t, parentId: null, sortOrder: (i + 1) * 10 }))
+  TRACKS.forEach((t, i) => dictionaries.push({ id: seq++, type: 'security_direction', value: t, parentId: null, sortOrder: (i + 1) * 10 }))
   let indSort = 0
   for (const [ind, subs] of INDUSTRIES) {
     const pid = seq++
@@ -241,7 +252,7 @@ export function seedDB(): MockDB {
         solution: hasSolution ? catalog.name : '',
         subSolution: hasSubSolution ? subCatalog.name : '',
         purchasedProducts: [...purchasedProducts],
-        track,
+        track: ci % 2 ? 'HCS' : '公有云', securityDirection: track,
         industry,
         subIndustry,
         scenario: `${customer}正在推进${catalog.name}建设，需要结合现网完成风险收敛。`,
@@ -359,9 +370,21 @@ export function seedDB(): MockDB {
     },
   ]
 
+  const people: Person[] = [
+    { id: seq++, name: '演示售前甲', employeeNo: 'DEMO-SA-01', account: 'demo.sa.01', aliases: ['演示甲'], enabled: true },
+    { id: seq++, name: '演示售前乙', employeeNo: 'DEMO-SA-02', account: 'demo.sa.02', aliases: ['演示乙'], enabled: true },
+  ]
+  const today = businessDate()
+  const actionDates = [-3, 0, 1, 7, 8, null].map((offset) => offset == null ? null : new Date(Date.parse(`${today}T00:00:00Z`) + offset * 86400000).toISOString().slice(0, 10))
   return {
     seq,
-    projects,
+    people,
+    projects: projects.map((p, i) => ({ ...p,
+      solutions: p.solution ? [{ solution: p.solution, subSolutions: p.subSolution ? [p.subSolution] : [] }, ...(i % 5 === 0 && p.solution !== SOLUTION_CATALOG[0].name ? [{ solution: SOLUTION_CATALOG[0].name, subSolutions: [SOLUTION_CATALOG[0].subSolutions[0].name] }] : [])] : [],
+      responsibleIds: [people[i % 2].id], responsibles: [{ personId: people[i % 2].id, name: people[i % 2].name, employeeNo: people[i % 2].employeeNo, account: people[i % 2].account, source: 'manual' }],
+      hcsOpportunityId: p.track === 'HCS' ? `DEMO-HCS-${i + 1}` : null, hcsStatus: p.track === 'HCS' ? '演示：已立项' : null,
+      lastFollowUpAt: [p.createdAt, ...progressLogs.filter((g) => g.projectId === p.id).map((g) => g.createdAt), ...changeLogs.filter((g) => g.projectId === p.id && g.field !== 'deleted').map((g) => g.createdAt)].sort().at(-1), nextActionDate: actionDates[i % actionDates.length], nextActionNote: actionDates[i % actionDates.length] ? '演示行动：确认需求与下一次交流' : '',
+    })),
     revenues,
     progressLogs,
     changeLogs,

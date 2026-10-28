@@ -20,40 +20,24 @@ const FIELD_ALIASES: Record<string, string[]> = {
   projectName: ['项目名称', '项目名', '项目'],
   projectStatus: ['项目状态', '状态'],
   securityBudget: ['客户安全预算', '客户安全预算（万元）', '客户安全预算(万元)'],
-  solution: ['解决方案', '方案'],
+  solution: ['解决方案', '方案', '安全解决方案类型'],
   subSolution: ['细分解决方案', '子解决方案'],
+  solutions: ['方案集合', '方案集合（JSON）', '方案集合(JSON)', '多解决方案'],
   purchasedProducts: ['已购产品', '购买产品', '产品'],
   track: ['赛道'],
+  securityDirection: ['安全方向'],
   industry: ['行业'],
   subIndustry: ['子行业', '细分行业'],
-  scenario: ['应用场景', '场景'],
-  keyNeeds: ['关键需求', '需求'],
-  keyRisks: ['关键风险', '风险'],
-}
-
-const PRODUCT_ALIASES: Record<ProductCode, string[]> = {
-  AAD: ['AAD', 'DDoS', 'Anti-DDoS'],
-  WAF: ['WAF'],
-  CFW: ['CFW'],
-  ESA: ['ESA', '边缘安全ESA', '边缘安全'],
-  HSS: ['HSS'],
-  NDR: ['NDR'],
-  DEW: ['DEW'],
-  DSC: ['DSC', '数据分类分级'],
-  SecMaster: ['SecMaster', '安全云脑'],
-  DBSS: ['DBSS'],
-  CBH: ['CBH'],
-  安全运营专业服务: ['安全运营专业服务'],
-  大模型防火墙: ['大模型防火墙'],
-  智能体卫士: ['智能体卫士'],
+  scenario: ['应用场景', '场景', '业务场景'],
+  keyNeeds: ['关键需求', '需求', '安全关键需求'],
+  keyRisks: ['关键风险', '风险', '项目风险和求助'],
 }
 
 function productFromHeader(header: string): ProductCode | null {
-  const candidates = new Set(headerCandidates(header))
-  for (const [product, aliases] of Object.entries(PRODUCT_ALIASES) as [ProductCode, string[]][]) {
-    if (aliases.some((alias) => candidates.has(normalizedName(alias)))) return product
-  }
-  return normalizeProductCode(header.split(/\s*[/／>]\s*/).at(-1) ?? header)
+  // 需求洞察中的同名产品表达需求，不能据产品名称推断已购。
+  if (/需求|洞察|意向|机会/.test(header)) return null
+  const tail = header.split(/\s*[/／>]\s*/).at(-1) ?? header
+  return normalizeProductCode(tail.replace(/^(?:已购产品|购买产品)[：:\s-]*/, ''))
 }
 
 function normalizedName(value: string): string {
@@ -119,7 +103,7 @@ export function autoMapColumns(headers: string[], rows: string[][], customDefs: 
     known.set(normalizedName(def.fieldKey), `custom.${def.fieldKey}`)
     known.set(normalizedName(def.label), `custom.${def.fieldKey}`)
   }
-  for (const alias of ['进展', '进展记录', '进展内容']) known.set(normalizedName(alias), PROGRESS_TARGET)
+  for (const alias of ['进展', '进展记录', '进展内容', '当前进展']) known.set(normalizedName(alias), PROGRESS_TARGET)
 
   const usedTargets = new Set<string>()
   const usedFieldKeys = new Set(customDefs.map((def) => def.fieldKey))
@@ -134,7 +118,7 @@ export function autoMapColumns(headers: string[], rows: string[][], customDefs: 
     }
     const existing = headerCandidates(header)
       .map((candidate) => known.get(candidate))
-      .find((target) => target != null && !usedTargets.has(target))
+      .find((target) => target != null)
     if (existing) {
       usedTargets.add(existing)
       return { target: existing, month: '' }

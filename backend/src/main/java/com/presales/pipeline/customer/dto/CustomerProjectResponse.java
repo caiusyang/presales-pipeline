@@ -15,6 +15,7 @@ public record CustomerProjectResponse(
         String subSolution,
         List<String> purchasedProducts,
         BigDecimal revenueTotal,
-        LocalDateTime updatedAt
+        LocalDateTime updatedAt,
+        List<com.presales.pipeline.solution.SolutionSelection> solutions
 ) {
 }

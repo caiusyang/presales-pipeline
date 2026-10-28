@@ -37,7 +37,7 @@ class CustomDictionaryIntegrationTest {
     @Test
     void categoriesHaveStableKeysAndProtectBuiltinsAndAssociations() throws Exception {
         JsonNode categories = data(mvc.perform(get("/api/dictionary-categories")).andExpect(status().isOk()).andReturn());
-        assertEquals(3, categories.size());
+        assertEquals(4, categories.size());
         long builtinId = categories.get(0).path("id").asLong();
         mvc.perform(delete("/api/dictionary-categories/{id}", builtinId).with(csrf())).andExpect(status().isConflict());
         mvc.perform(post("/api/dictionary-categories").with(csrf()).contentType(MediaType.APPLICATION_JSON)

@@ -32,12 +32,14 @@ public class ChangeLogService {
             return false;
         }
         repository.save(new ChangeLog(project, operatorProvider.currentOperator(), field, oldText, newText, source));
+        if (!field.equals("deleted") && !field.equals("lastSyncAt")) project.touchFollowUp();
         return true;
     }
 
     public void log(Project project, String field, Object oldValue, Object newValue, String source) {
         repository.save(new ChangeLog(project, operatorProvider.currentOperator(), field,
                 stringify(oldValue), stringify(newValue), source));
+        if (!field.equals("deleted") && !field.equals("lastSyncAt")) project.touchFollowUp();
     }
 
     private String stringify(Object value) {

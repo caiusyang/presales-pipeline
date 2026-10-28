@@ -10,6 +10,7 @@ import jakarta.persistence.Table;
 
 @Entity
 @Table(name = "dictionaries")
+@org.hibernate.annotations.BatchSize(size=100)
 public class DictionaryItem extends SoftDeletableEntity {
 
     @Column(nullable = false, length = 64)

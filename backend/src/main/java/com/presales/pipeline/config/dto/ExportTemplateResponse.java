@@ -9,6 +9,7 @@ public record ExportTemplateResponse(
         String scope,
         List<ExportColumnRequest> columns,
         LocalDateTime createdAt,
-        LocalDateTime updatedAt
+        LocalDateTime updatedAt,
+        String applicableTrack
 ) {
 }

@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useBlocker } from 'react-router-dom'
 import { Check } from 'lucide-react'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Select } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 import type { ID, ImportMapping } from '@/types'
 import type { ParsedSheet } from '@/components/impexp/excel'
@@ -29,6 +32,8 @@ export default function ImportPage() {
   const [mappingName, setMappingName] = useState('')
   const [session, setSession] = useState(emptyReview)
   const [uploadVersion, setUploadVersion] = useState(0)
+  const [defaultYear, setDefaultYear] = useState('')
+  const [sourceTrack, setSourceTrack] = useState('')
   const customDefsQ = useCustomFieldDefs()
   const hasPending = parsed != null && parsed.rows.some((row, index) => row.some((cell) => cell.trim()) && isPendingImportRow(session, parsed.dataStartRow + index))
   const blocker = useBlocker(hasPending)
@@ -49,7 +54,7 @@ export default function ImportPage() {
     () => (parsed ? buildColumnMap(parsed.headers, targets) : {}),
     [parsed, targets],
   )
-  const valueRules = useMemo(() => draftsToRules(ruleDrafts), [ruleDrafts])
+  const valueRules = useMemo(() => [...draftsToRules(ruleDrafts), ...(sourceTrack ? [{ type: 'default' as const, field: 'track', value: sourceTrack }] : [])], [ruleDrafts, sourceTrack])
   const pendingFields = useMemo(() => pendingFieldsFromTargets(targets), [targets])
 
   const handleParsed = async (p: ParsedSheet) => {
@@ -73,7 +78,13 @@ export default function ImportPage() {
     if (!parsed) return
     setMappingId(m.id)
     setMappingName(m.name)
-    setTargets(targetsFromColumnMap(parsed.headers, m.columnMap))
+    setSourceTrack(m.applicableTrack ?? '')
+    const mapped = targetsFromColumnMap(parsed.headers, m.columnMap)
+    if (m.name === '公有云需求洞察（固定语义）') {
+      const automatic = autoMapColumns(parsed.headers, parsed.rows, customDefsQ.data ?? [])
+      parsed.headers.forEach((header, index) => { if (!Object.hasOwn(m.columnMap, header)) mapped[index] = automatic[index] })
+    }
+    setTargets(mapped)
     setRuleDrafts(rulesToDrafts(m.valueRules))
   }
 
@@ -97,6 +108,13 @@ export default function ImportPage() {
       <div>
         <h1 className="text-lg font-semibold">Excel 导入向导</h1>
         <p className="text-sm text-muted-foreground">上传 → 映射调整 → 确认执行，三步完成；文件在本地解析，不经过服务器</p>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-3 rounded-md border p-3 text-sm">
+        <Label>本次导入赛道</Label><Select className="w-36" value={sourceTrack} onValueChange={setSourceTrack} clearable clearLabel="未指定" placeholder="未指定" options={['HCS', '公有云'].map((v) => ({ value: v, label: v }))} />
+        <Label htmlFor="progress-default-year">进展默认年份</Label>
+        <Input id="progress-default-year" type="number" className="w-28" min={1000} max={9999} placeholder="如 2025" value={defaultYear} onChange={(event) => setDefaultYear(event.target.value)} />
+        <span className="text-xs text-muted-foreground">仅用于“9月13日、09/13”等缺少年份的日期；不填写时此类记录待修正，不使用导入当天。</span>
       </div>
 
       {/* 步骤条 */}
@@ -137,6 +155,7 @@ export default function ImportPage() {
           onRuleDraftsChange={setRuleDrafts}
           mappingId={mappingId}
           mappingName={mappingName}
+          sourceTrack={sourceTrack}
           onApplyMapping={applyMapping}
           onMappingSaved={(id, name) => {
             setMappingId(id)
@@ -168,6 +187,7 @@ export default function ImportPage() {
           valueRules={valueRules}
           mappingId={mappingId}
           pendingFields={pendingFields}
+          defaultYear={/^\d{4}$/.test(defaultYear) && Number(defaultYear) >= 1000 ? Number(defaultYear) : undefined}
           onBack={() => setStep(2)}
           onReset={resetAll}
         />

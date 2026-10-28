@@ -55,6 +55,8 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(ApiResponse.failure(40901, "数据与现有记录冲突，请刷新后重试"));
     }
+    @ExceptionHandler({org.springframework.orm.ObjectOptimisticLockingFailureException.class,org.springframework.dao.CannotAcquireLockException.class})
+    public ResponseEntity<ApiResponse<Void>> handleConcurrent(Exception exception){return ResponseEntity.status(HttpStatus.CONFLICT).body(ApiResponse.failure(40902,"记录正在被修改或已变化，请刷新后重试"));}
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResponse<Void>> handleUnexpected(Exception exception) {

@@ -30,11 +30,15 @@ public class DictionaryService {
     private final DictionaryCategoryService categoryService;
     private final DictionaryCategoryRepository categories;
     private final CustomFieldDefinitionRepository customFields;
+    private final ProductCatalog productCatalog;
+    private final com.presales.pipeline.solution.ProjectSolutionRepository solutionRepository;
 
     public DictionaryService(DictionaryRepository repository,
                              ProjectRepository projectRepository,
                              ChangeLogService changeLogService, DictionaryCategoryService categoryService,
-                             DictionaryCategoryRepository categories, CustomFieldDefinitionRepository customFields) {
+                             DictionaryCategoryRepository categories, CustomFieldDefinitionRepository customFields,ProductCatalog productCatalog,com.presales.pipeline.solution.ProjectSolutionRepository solutionRepository) {
+        this.solutionRepository=solutionRepository;
+        this.productCatalog=productCatalog;
         this.repository = repository;
         this.projectRepository = projectRepository;
         this.changeLogService = changeLogService;
@@ -69,11 +73,12 @@ public class DictionaryService {
 
     @Transactional
     public DictionaryNodeResponse create(DictionaryRequest request) {
+        if(request.type().equals("track")&&!List.of("HCS","公有云").contains(request.value().trim()))throw BusinessException.badRequest("赛道固定为 HCS、公有云；安全方向请使用安全方向字典");
         categoryService.ensureLegacyCategory(normalizeType(request.type()));
         String type = normalizeType(request.type());
         String value = clean(request.value());
         if ("product".equals(type)) {
-            value = ProductCatalog.normalize(value);
+            value = productCatalog.normalize(value);
         }
         DictionaryItem parent = resolveParent(request.parentId(), type, null);
         ensureNoDuplicate(type, value, parent, null);
@@ -91,7 +96,8 @@ public class DictionaryService {
         String type = normalizeType(request.type());
         String value = clean(request.value());
         if (value.isEmpty() || value.length() > 255) throw BusinessException.badRequest("字典值不能为空且最多255个字符");
-        if ("product".equals(type)) value = ProductCatalog.normalize(value);
+        if (type.equals("track") && !List.of("HCS","公有云").contains(value)) throw BusinessException.badRequest("赛道固定为 HCS、公有云；安全方向请使用安全方向字典");
+        if ("product".equals(type)) value = productCatalog.normalize(value);
         DictionaryItem parent = resolveParent(request.parentId(), type, null);
         return new DictionaryNodeResponse(null, type, value, parent == null ? null : parent.getId(), request.sortOrder(), null, null, List.of());
     }
@@ -107,10 +113,11 @@ public class DictionaryService {
     @Transactional
     public DictionaryNodeResponse update(Long id, DictionaryRequest request) {
         DictionaryItem item = getActive(id);
+        if(item.getType().equals("track")&&(!request.type().equals("track")||!item.getValue().equals(request.value().trim())))throw BusinessException.conflict("固定赛道不可改名或更换类型");
         String type = normalizeType(request.type());
         String value = clean(request.value());
         if ("product".equals(type)) {
-            value = ProductCatalog.normalize(value);
+            value = productCatalog.normalize(value);
         }
         DictionaryItem parent = resolveParent(request.parentId(), type, id);
         ensureNoDuplicate(type, value, parent, id);
@@ -148,6 +155,7 @@ public class DictionaryService {
     @Transactional
     public void delete(Long id) {
         DictionaryItem item = getActive(id);
+        if(item.getType().equals("track"))throw BusinessException.conflict("HCS、公有云为固定赛道，不能删除");
         if (repository.existsByParentIdAndDeletedFalse(id)) {
             throw BusinessException.conflict("该字典项仍有下级项，不能删除");
         }
@@ -184,6 +192,7 @@ public class DictionaryService {
         Map<String, String> errors = selectionErrors(solution, subSolution, purchasedProducts, track, industry, subIndustry);
         if (!errors.isEmpty()) throw BusinessException.badRequest(errors.values().iterator().next());
     }
+    public void validateSecurityDirection(String value){validateIfConfigured("security_direction",value);}
 
     @Transactional(readOnly = true)
     public Map<String, String> selectionErrors(String solution, String subSolution,
@@ -193,10 +202,7 @@ public class DictionaryService {
         DictionaryItem solutionItem = checkSelection(errors, "solution", () -> validateIfConfigured("solution", solution));
         DictionaryItem subSolutionItem = checkSelection(errors, "subSolution", () -> validateChildIfConfigured(
                 "sub_solution", subSolution, solutionItem, "细分解决方案不属于所选解决方案"));
-        for (String product : purchasedProducts == null ? List.<String>of() : purchasedProducts) {
-            checkSelection(errors, "purchasedProducts", () -> validateChildIfConfigured("product", product, subSolutionItem,
-                    "产品“" + product + "”不属于所选细分解决方案"));
-        }
+        // 项目已拥有产品独立于方案推荐产品，不能随方案切换丢失或被错误拒绝。
         checkSelection(errors, "track", () -> validateIfConfigured("track", track));
         DictionaryItem industryItem = checkSelection(errors, "industry", () -> validateIfConfigured("industry", industry));
         DictionaryItem subIndustryItem = checkSelection(errors, "subIndustry", () -> validateIfConfigured("sub_industry", subIndustry));
@@ -219,7 +225,7 @@ public class DictionaryService {
         if (value == null || value.isBlank()) {
             return null;
         }
-        List<DictionaryItem> configured = repository.findAllByTypeAndDeletedFalseOrderBySortOrderAscIdAsc(type);
+        List<DictionaryItem> configured = configured(type);
         if (configured.isEmpty()) {
             return null;
         }
@@ -234,7 +240,7 @@ public class DictionaryService {
         if (value == null || value.isBlank()) {
             return null;
         }
-        List<DictionaryItem> configured = repository.findAllByTypeAndDeletedFalseOrderBySortOrderAscIdAsc(type);
+        List<DictionaryItem> configured = configured(type);
         if (configured.isEmpty()) {
             throw BusinessException.badRequest(errorMessage);
         }
@@ -263,7 +269,7 @@ public class DictionaryService {
         if (!DictionaryCategoryService.BUILT_IN_TYPES.contains(type)) {
             requireCustomCategory(type);
             if (parentId != null) throw BusinessException.badRequest("自定义字典不支持上级关联");
-        } else if (Set.of("track", "industry", "solution").contains(type) && parentId != null) {
+        } else if (Set.of("track", "industry", "solution", "security_direction").contains(type) && parentId != null) {
             throw BusinessException.badRequest("该字典类型不支持上级关联");
         }
         if (parentId == null) {
@@ -300,6 +306,7 @@ public class DictionaryService {
     }
 
     private boolean isReferenced(DictionaryItem item) {
+        if(solutionRepository.references(item.getId()))return true;
         return projectRepository.findAll().stream()
                 .anyMatch(project -> matchesProject(project, item));
     }
@@ -314,6 +321,7 @@ public class DictionaryService {
             case "sub_solution" -> project.getSubSolution();
             case "product" -> project.getPurchasedProducts().contains(item.getValue()) ? item.getValue() : null;
             case "track" -> project.getTrack();
+            case "security_direction" -> project.getSecurityDirection();
             case "industry" -> project.getIndustry();
             case "sub_industry" -> project.getSubIndustry();
             default -> null;
@@ -327,7 +335,7 @@ public class DictionaryService {
         return switch (item.getType()) {
             case "sub_industry" -> Objects.equals(project.getIndustry(), item.getParent().getValue());
             case "sub_solution" -> Objects.equals(project.getSolution(), item.getParent().getValue());
-            case "product" -> Objects.equals(project.getSubSolution(), item.getParent().getValue());
+            case "product" -> true;
             default -> true;
         };
     }
@@ -346,6 +354,7 @@ public class DictionaryService {
                 case "product" -> project.setPurchasedProducts(project.getPurchasedProducts().stream()
                         .map(value -> value.equals(oldValue) ? newValue : value).toList());
                 case "track" -> project.setTrack(newValue);
+                case "security_direction" -> project.setSecurityDirection(newValue);
                 case "industry" -> project.setIndustry(newValue);
                 case "sub_industry" -> project.setSubIndustry(newValue);
                 default -> {
@@ -388,6 +397,7 @@ public class DictionaryService {
     private String clean(String value) {
         return value.trim();
     }
+    private List<DictionaryItem> configured(String type){return com.presales.pipeline.importing.ImportReferenceScope.cached("dictionary:"+type,()->repository.findAllByTypeAndDeletedFalseOrderBySortOrderAscIdAsc(type));}
 
     private String typeLabel(String type) {
         return switch (type) {

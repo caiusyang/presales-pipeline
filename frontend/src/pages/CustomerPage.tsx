@@ -19,6 +19,8 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { useCustomers } from '@/hooks/queries'
 import { fmtAmount } from '@/lib/format'
+import { productName } from '@/lib/products'
+import { solutionSelections } from '@/lib/solutions'
 import { PROJECT_STATUSES, type ID } from '@/types'
 import type { CustomerAnalysis } from '@/api/types'
 
@@ -34,7 +36,7 @@ function ProductBadges({ products, limit }: { products: string[]; limit?: number
   if (products.length === 0) return <span className="text-xs text-muted-foreground">暂无已购产品</span>
   return (
     <div className="flex flex-wrap gap-1">
-      {visible.map((product) => <Badge key={product} variant="outline">{product}</Badge>)}
+      {visible.map((product) => <Badge key={product} variant="outline">{productName(product)}</Badge>)}
       {limit != null && products.length > limit && (
         <Badge variant="secondary">+{products.length - limit}</Badge>
       )}
@@ -193,7 +195,7 @@ export default function CustomerPage() {
                               </Badge>
                             </TableCell>
                             <TableCell className="text-muted-foreground">
-                              {[project.solution, project.subSolution].filter(Boolean).join(' / ') || '—'}
+                              {solutionSelections(project).map((s) => [s.solution, ...s.subSolutions].join(' / ')).join('；') || '—'}
                             </TableCell>
                             <TableCell><ProductBadges products={project.purchasedProducts} limit={3} /></TableCell>
                             <TableCell className="text-right">{fmtAmount(project.revenueTotal)}</TableCell>

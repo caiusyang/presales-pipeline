@@ -1,7 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { api } from '@/api'
-import { batchDeleteProjects } from '@/components/project/batchDeleteProjects'
+import type { BatchDeleteProjectsResult as BatchDeleteResult } from '@/components/project/batchDeleteProjects'
+import { waitForJob } from '@/api/jobs'
+import { setProductCatalog } from '@/lib/products'
+import type { ProductInput } from '@/lib/products'
 import type {
   DictNode,
   ExportColumn,
@@ -44,6 +47,15 @@ export const qk = {
 }
 
 const onErr = (e: unknown) => toast.error((e as Error).message || '操作失败')
+
+export function useProductCatalog() {
+  return useQuery({ queryKey: ['product-catalog'], queryFn: async () => { const products = await api.listProductCatalog(); setProductCatalog(products); return products } })
+}
+export function usePeople() { return useQuery({ queryKey: ['people'], queryFn: () => api.listPeople() }) }
+export function useProductCatalogMutations() {
+  const qc = useQueryClient()
+  return useMutation({ mutationFn: ({ id, input }: { id?: number; input: ProductInput }) => id ? api.updateProduct(id, input) : api.createProduct(input), onSuccess: async () => { await qc.invalidateQueries({ queryKey: ['product-catalog'] }); await qc.invalidateQueries({ queryKey: ['export-fields'] }); await qc.invalidateQueries({ queryKey: ['dicts'] }); toast.success('产品目录已保存') }, onError: onErr })
+}
 
 // ---------------- 项目 ----------------
 export function useProjects(q: ProjectListQuery) {
@@ -88,7 +100,7 @@ export function useProjectMutations() {
     onError: onErr,
   })
   const removeMany = useMutation({
-    mutationFn: (ids: ID[]) => batchDeleteProjects(ids, (id) => api.deleteProject(id)),
+    mutationFn: async (ids: ID[]) => waitForJob<BatchDeleteResult>(api, await api.startProjectBatch({ requestId: crypto.randomUUID(), operation: 'delete', projectIds: ids })),
     onSuccess: (result) => {
       if (result.failures.length) {
         toast.warning(`已删除 ${result.deletedIds.length} 个项目，${result.failures.length} 个未完成，请查看失败原因`)
@@ -105,7 +117,7 @@ export function useProjectMutations() {
     onError: onErr,
   })
   const purgeMany = useMutation({
-    mutationFn: (ids: ID[]) => batchDeleteProjects(ids, (id) => api.permanentlyDeleteProject(id)),
+    mutationFn: async (ids: ID[]) => waitForJob<BatchDeleteResult>(api, await api.startProjectBatch({ requestId: crypto.randomUUID(), operation: 'purge', projectIds: ids })),
     onSuccess: (result) => {
       if (result.failures.length) toast.warning(`已永久删除 ${result.deletedIds.length} 个项目，${result.failures.length} 个未完成，请查看失败原因`)
       else toast.success(`已永久删除 ${result.deletedIds.length} 个项目及其关联数据`)
@@ -118,13 +130,15 @@ export function useProjectMutations() {
     onSuccess: () => { invalidate(); toast.success('已恢复') },
     onError: onErr,
   })
-  return { create, update, remove, removeMany, purge, purgeMany, restore }
+  const restoreMany = useMutation({ mutationFn: async (ids: ID[]) => waitForJob<BatchDeleteResult>(api, await api.startProjectBatch({ requestId: crypto.randomUUID(), operation: 'restore', projectIds: ids })), onSettled: invalidate, onError: onErr })
+  const completeAction = useMutation({ mutationFn: ({ id, nextActionDate, nextActionNote }: { id: ID; nextActionDate: string | null; nextActionNote: string }) => api.completeAction(id, { nextActionDate, nextActionNote }), onSuccess: () => { invalidate(); toast.success('本次行动已完成') }, onError: onErr })
+  return { create, update, remove, removeMany, purge, purgeMany, restore, restoreMany, completeAction }
 }
 
 // ---------------- 进展 ----------------
 export function useProgressMutations(projectId: ID) {
   const qc = useQueryClient()
-  const invalidate = () => qc.invalidateQueries({ queryKey: qk.projectDetail(projectId) })
+  const invalidate = () => { qc.invalidateQueries({ queryKey: qk.projectDetail(projectId) }); qc.invalidateQueries({ queryKey: ['projects'] }) }
   const add = useMutation({
     mutationFn: (input: { logDate: string; content: string }) => api.addProgress({ projectId, ...input }),
     onSuccess: () => { invalidate(); toast.success('进展已记录') },
@@ -247,13 +261,13 @@ export function useMappingMutations() {
   const qc = useQueryClient()
   const invalidate = () => qc.invalidateQueries({ queryKey: qk.mappings() })
   const create = useMutation({
-    mutationFn: (input: { name: string; columnMap: Record<string, string>; valueRules: ValueRule[] }) =>
+    mutationFn: (input: { name: string; columnMap: Record<string, string>; valueRules: ValueRule[]; applicableTrack?: string | null }) =>
       api.createImportMapping(input),
     onSuccess: () => { invalidate(); toast.success('映射方案已保存') },
     onError: onErr,
   })
   const update = useMutation({
-    mutationFn: ({ id, input }: { id: ID; input: { name: string; columnMap: Record<string, string>; valueRules: ValueRule[] } }) =>
+    mutationFn: ({ id, input }: { id: ID; input: { name: string; columnMap: Record<string, string>; valueRules: ValueRule[]; applicableTrack?: string | null } }) =>
       api.updateImportMapping(id, input),
     onSuccess: () => { invalidate(); toast.success('映射方案已更新') },
     onError: onErr,
@@ -275,13 +289,13 @@ export function useTemplateMutations() {
   const qc = useQueryClient()
   const invalidate = () => qc.invalidateQueries({ queryKey: qk.templates() })
   const create = useMutation({
-    mutationFn: (input: { name: string; scope: ExportScope; columns: ExportColumn[] }) =>
+    mutationFn: (input: { name: string; scope: ExportScope; columns: ExportColumn[]; applicableTrack?: string | null }) =>
       api.createExportTemplate(input),
     onSuccess: () => { invalidate(); toast.success('模板已保存') },
     onError: onErr,
   })
   const update = useMutation({
-    mutationFn: ({ id, input }: { id: ID; input: { name: string; scope: ExportScope; columns: ExportColumn[] } }) =>
+    mutationFn: ({ id, input }: { id: ID; input: { name: string; scope: ExportScope; columns: ExportColumn[]; applicableTrack?: string | null } }) =>
       api.updateExportTemplate(id, input),
     onSuccess: () => { invalidate(); toast.success('模板已更新') },
     onError: onErr,
@@ -329,8 +343,8 @@ export function useCustomFieldMutations() {
 export function useImportRecords() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (input: Parameters<typeof api.importRecords>[0]) =>
-      api.importRecords(input),
+    mutationFn: async (input: Parameters<typeof api.importRecords>[0]) =>
+      waitForJob<Awaited<ReturnType<typeof api.importRecords>>>(api, await api.startImportJob({ requestId: crypto.randomUUID(), request: input })),
     onSuccess: (result) => {
       if (!result.dryRun) qc.invalidateQueries() // 正式导入影响面广，全量失效
     },
@@ -349,7 +363,7 @@ export function useExportData() {
       scope?: ExportScope
       columns?: ExportColumn[]
       filters?: ExportFilters
-    }) => api.exportData(input),
+    }) => api.startExportJob({ requestId: crypto.randomUUID(), request: input }).then((job) => waitForJob<Awaited<ReturnType<typeof api.exportData>>>(api, job)),
     onError: onErr,
   })
 }

@@ -8,3 +8,6 @@
 backend/target/
 backups/*
 !backups/.gitkeep
+/node_modules
+/docs/deliverables/*.png
+/docs/deliverables/*.inspect.ndjson

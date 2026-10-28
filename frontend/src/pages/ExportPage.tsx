@@ -15,7 +15,8 @@ import { useDictionaries, useExportData, useExportFields, useExportTemplates, us
 import { flattenDictTree } from '@/lib/fields'
 import type { ExportColumn, ExportScope, ID } from '@/types'
 import type { ExportFilters, ExportResult } from '@/api/types'
-import { cellToString, downloadExportXlsx } from '@/components/impexp/excel'
+import { cellToString } from '@/components/impexp/excel'
+import { downloadExportXlsxAsync } from '@/components/impexp/excelAsync'
 import { ExportColumnConfig } from '@/components/impexp/ExportColumnConfig'
 import { SaveNameDialog } from '@/components/impexp/SaveNameDialog'
 
@@ -48,6 +49,7 @@ export default function ExportPage() {
   const [previewKey, setPreviewKey] = useState('')
   const [saveOpen, setSaveOpen] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [generating, setGenerating] = useState(false)
   const [autoFillCombined, setAutoFillCombined] = useState(true)
 
   const templates = useExportTemplates()
@@ -65,8 +67,8 @@ export default function ExportPage() {
   }, [autoFillCombined, fieldsQuery.data, scope])
 
   const scopeTemplates = useMemo(
-    () => (templates.data ?? []).filter((t) => t.scope === scope),
-    [templates.data, scope],
+    () => (templates.data ?? []).filter((t) => t.scope === scope && (!filters.track || !t.applicableTrack || t.applicableTrack === filters.track)),
+    [templates.data, scope, filters.track],
   )
 
   const dictOptions = (nodes: typeof industryDict.data) =>
@@ -121,10 +123,10 @@ export default function ExportPage() {
     setSaving(true)
     try {
       if (templateId != null) {
-        await templateMut.update.mutateAsync({ id: templateId, input: { name, scope, columns } })
+        await templateMut.update.mutateAsync({ id: templateId, input: { name, scope, columns, applicableTrack: filters.track || null } })
         setTemplateName(name)
       } else {
-        const created = await templateMut.create.mutateAsync({ name, scope, columns })
+        const created = await templateMut.create.mutateAsync({ name, scope, columns, applicableTrack: filters.track || null })
         setTemplateId(created.id)
         setTemplateName(created.name)
       }
@@ -158,18 +160,18 @@ export default function ExportPage() {
       toast.error('请至少选择一列')
       return
     }
+    setGenerating(true)
     try {
       // 预览数据未过期则复用，否则重新请求全量
       const res = preview && previewKey === paramsKey() ? preview : await requestData()
       const filename = `售前导出_${SCOPE_LABELS[res.scope]}_${dayjs().format('YYYY-MM-DD')}.xlsx`
-      downloadExportXlsx(res.columns, res.rows, SCOPE_LABELS[res.scope], filename)
+      await downloadExportXlsxAsync(res.columns, res.rows, SCOPE_LABELS[res.scope], filename)
       toast.success(`已导出 ${res.totalRows} 行：${filename}`)
-    } catch {
-      // 错误提示由 hook 统一 toast
-    }
+    } catch (error) { toast.error((error as Error).message || '导出失败') }
+    finally { setGenerating(false) }
   }
 
-  const loading = exportMut.isPending
+  const loading = exportMut.isPending || generating
 
   return (
     <div className="mx-auto max-w-6xl space-y-4 p-6">
@@ -254,7 +256,7 @@ export default function ExportPage() {
                 <Label>赛道</Label>
                 <Select
                   value={filters.track}
-                  onValueChange={(v) => setFilters({ ...filters, track: v })}
+                  onValueChange={(v) => { setFilters({ ...filters, track: v }); setTemplateId(null); setTemplateName('') }}
                   options={dictOptions(trackDict.data)}
                   placeholder="全部赛道"
                   clearable

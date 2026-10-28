@@ -5,7 +5,8 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { downloadImportSample, MAX_IMPORT_FILE_BYTES, MAX_IMPORT_ROWS, parseExcelFile } from './excel'
+import { downloadImportSample, MAX_IMPORT_FILE_BYTES, MAX_IMPORT_ROWS } from './excel'
+import { parseExcelFileAsync } from './excelAsync'
 import type { ParsedSheet } from './excel'
 
 const PREVIEW_ROWS = 20
@@ -24,7 +25,9 @@ export function StepUpload({ parsed, onParsed, onNext }: Props) {
   const handleFile = async (file: File) => {
     setParsing(true)
     try {
-      const p = await parseExcelFile(file)
+      const started = performance.now()
+      const p = await parseExcelFileAsync(file)
+      performance.measure('excel-parse', { start: started, end: performance.now() })
       await onParsed(p)
       toast.success(`解析成功：${p.sheetName}，识别 ${p.headerRows} 行表头、${p.totalRows} 行数据`)
     } catch (e) {

@@ -9,6 +9,11 @@ import java.util.List;
 import java.util.Optional;
 
 public interface RevenueRepository extends JpaRepository<Revenue, Long> {
+    interface Total { Long getProjectId(); java.math.BigDecimal getAmount(); }
+    @Query("select r.project.id as projectId,sum(r.amount) as amount from Revenue r where r.deleted=false and r.project.id in :ids and (:start is null or r.month>=:start) and (:end is null or r.month<=:end) group by r.project.id")
+    List<Total> totals(@Param("ids") List<Long> ids,@Param("start") String start,@Param("end") String end);
+    @Query("select distinct r.month from Revenue r where r.deleted=false and r.project.deleted=false order by r.month")
+    List<String> activeMonths();
     @Modifying
     @Query("delete from Revenue r where r.project.id = :projectId")
     void deleteAllByProjectId(@Param("projectId") Long projectId);

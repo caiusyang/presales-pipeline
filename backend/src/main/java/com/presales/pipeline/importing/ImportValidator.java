@@ -25,9 +25,14 @@ public class ImportValidator {
     private final RevenueService revenues;
     private final Validator validator;
     private final CustomFieldDefinitionRepository fieldRepository;
+    private final ProductCatalog productCatalog;
+    private final com.presales.pipeline.solution.ProjectSolutions solutions;
+    private final com.fasterxml.jackson.databind.ObjectMapper mapper;
 
     public ImportValidator(ConfigService config, DictionaryService dictionaries, RevenueService revenues,
-                           Validator validator, CustomFieldDefinitionRepository fieldRepository) {
+                           Validator validator, CustomFieldDefinitionRepository fieldRepository,ProductCatalog productCatalog,com.presales.pipeline.solution.ProjectSolutions solutions,com.fasterxml.jackson.databind.ObjectMapper mapper) {
+        this.solutions=solutions;this.mapper=mapper;
+        this.productCatalog=productCatalog;
         this.config = config; this.dictionaries = dictionaries; this.revenues = revenues;
         this.validator = validator; this.fieldRepository = fieldRepository;
     }
@@ -35,6 +40,14 @@ public class ImportValidator {
     public List<ImportIssue> validate(Map<String, Object> fields, ImportRecordRequest record,
                                       List<ImportFieldDefinition> pending) {
         List<ImportIssue> issues = new ArrayList<>();
+        List<com.presales.pipeline.solution.SolutionSelection> selections=null;
+        if(fields.containsKey("solutions"))try{
+            var raw=fields.get("solutions");if(!(raw instanceof List<?>))throw BusinessException.badRequest("方案集合必须是数组");
+            selections=solutions.normalize(mapper.convertValue(raw,new com.fasterxml.jackson.core.type.TypeReference<List<com.presales.pipeline.solution.SolutionSelection>>(){}),null,null);
+            fields.put("solutions",selections);fields.put("solution",selections.isEmpty()?null:selections.get(0).solution());fields.put("subSolution",selections.isEmpty()||selections.get(0).subSolutions().isEmpty()?null:selections.get(0).subSolutions().get(0));
+        }catch(RuntimeException error){add(issues,"solutions","option",error.getMessage());}
+        if(!text(fields.get("nextActionDate")).isEmpty())try{java.time.LocalDate.parse(text(fields.get("nextActionDate")));}catch(RuntimeException error){add(issues,"nextActionDate","format","下次行动日期无效");}
+        if(text(fields.get("nextActionNote")).length()>20000)add(issues,"nextActionNote","length","下次行动内容超过20000字符");
         for (String key : List.of("customerName", "projectName")) {
             if (text(fields.get(key)).isEmpty()) add(issues, key, "required", key.equals("customerName") ? "客户名称不能为空" : "项目名称不能为空");
         }
@@ -43,6 +56,8 @@ public class ImportValidator {
             if (text(fields.get(key)).length() > max) add(issues, key, "length", "字段超过允许长度 " + max);
         }
         String status = text(fields.get("projectStatus"));
+        String track=text(fields.get("track"));if(!track.isEmpty()&&!List.of("HCS","公有云").contains(track))add(issues,"track","option","赛道固定为 HCS、公有云；安全方向须单独映射");
+        try{dictionaries.validateSecurityDirection(text(fields.get("securityDirection")));}catch(BusinessException error){add(issues,"securityDirection","option",error.getMessage());}
         if (status.isEmpty()) fields.put("projectStatus", ProjectService.DEFAULT_STATUS);
         else if (!ProjectService.PROJECT_STATUSES.contains(status)) add(issues, "projectStatus", "option", "请选择标准项目状态");
 
@@ -55,18 +70,18 @@ public class ImportValidator {
         }
         List<String> products = products(fields.get("purchasedProducts"));
         for (String value : products) {
-            try { ProductCatalog.normalize(value); }
+            try { productCatalog.normalize(value); }
             catch (BusinessException exception) { add(issues, "purchasedProducts", "option", exception.getMessage()); }
         }
         dictionaries.selectionErrors(text(fields.get("solution")), text(fields.get("subSolution")), products,
                 text(fields.get("track")), text(fields.get("industry")), text(fields.get("subIndustry")))
-                .forEach((field, message) -> add(issues, field, "option", message));
+                .forEach((field, message) -> {if(issues.stream().noneMatch(issue->issue.field().equals(field)))add(issues, field, "option", message);});
         if (ProjectService.WON_STATUS.equals(status)) {
             if (text(fields.get("solution")).isEmpty()) add(issues, "solution", "required", "中标时必须确认解决方案");
-            if (text(fields.get("subSolution")).isEmpty()) add(issues, "subSolution", "required", "中标时必须确认细分解决方案");
+            if (selections==null?text(fields.get("subSolution")).isEmpty():selections.stream().noneMatch(s->!s.subSolutions().isEmpty())) add(issues, "subSolution", "required", "中标时必须确认细分解决方案");
             if (products.isEmpty()) add(issues, "purchasedProducts", "required", "中标时至少选择一个已购产品");
         }
-        validateCustom(fields.get("customFields"), pending, issues);
+        validateCustom(fields.get("customFields"), pending, issues,text(fields.get("track")));
         for (int i = 0; i < record.revenues().size(); i++) {
             var cell = record.revenues().get(i);
             try {
@@ -83,7 +98,7 @@ public class ImportValidator {
         return issues;
     }
 
-    private void validateCustom(Object raw, List<ImportFieldDefinition> pending, List<ImportIssue> issues) {
+    private void validateCustom(Object raw, List<ImportFieldDefinition> pending, List<ImportIssue> issues,String track) {
         if (!(raw instanceof Map<?, ?> values)) { add(issues, "customFields", "format", "自定义字段必须是对象"); return; }
         Map<String, CustomFieldResponse> defs = new LinkedHashMap<>();
         config.listCustomFields().forEach(def -> defs.put(def.fieldKey(), def));
@@ -103,6 +118,7 @@ public class ImportValidator {
         }
         for (Object key : values.keySet()) if (!defs.containsKey(String.valueOf(key))) add(issues, "custom." + key, "definition", "自定义字段尚未定义");
         for (CustomFieldResponse def : defs.values()) {
+            if(def.applicableTracks()!=null&&!def.applicableTracks().isEmpty()&&!def.applicableTracks().contains(track))continue;
             String value = text(values.get(def.fieldKey()));
             String key = "custom." + def.fieldKey();
             if (value.isEmpty()) {

@@ -33,11 +33,15 @@ public class ImportRecordProcessor {
     private final ProgressService progressService;
     private final ImportValidator importValidator;
     private final ObjectMapper mapper;
+    private final com.presales.pipeline.project.ProjectIdentityGuard identities;
+    private final com.presales.pipeline.tasks.TaskHistoryService history;
 
     public ImportRecordProcessor(ProjectRepository projectRepository,
                                  ProjectService projectService,
                                  RevenueService revenueService,
-                                 ProgressService progressService, ImportValidator importValidator, ObjectMapper mapper) {
+                                 ProgressService progressService, ImportValidator importValidator, ObjectMapper mapper,com.presales.pipeline.project.ProjectIdentityGuard identities,com.presales.pipeline.tasks.TaskHistoryService history) {
+        this.history=history;
+        this.identities=identities;
         this.projectRepository = projectRepository;
         this.projectService = projectService;
         this.revenueService = revenueService;
@@ -48,12 +52,27 @@ public class ImportRecordProcessor {
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public ProcessedRecord process(ImportRecordRequest record, boolean dryRun, List<ImportFieldDefinition> pending) {
+        return processCore(record, dryRun, pending, java.util.Set.of());
+    }
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public ProcessedRecord process(ImportRecordRequest record, boolean dryRun, List<ImportFieldDefinition> pending,java.util.Set<String> seen) {return processCore(record,dryRun,pending,seen);}
+
+    /** Joins the job-item transaction, so business data and success marker commit atomically. */
+    @Transactional
+    public ProcessedRecord processJoined(ImportRecordRequest record, boolean dryRun, List<ImportFieldDefinition> pending, java.util.Set<String> seen) {
+        return processCore(record, dryRun, pending, seen);
+    }
+
+    private ProcessedRecord processCore(ImportRecordRequest record, boolean dryRun, List<ImportFieldDefinition> pending, java.util.Set<String> seen) {
         FieldBag fields = new FieldBag(record.fields());
         String externalId = fields.string("externalId", "external_id");
         String incomingCustomer = fields.string("customerName", "customer_name");
         String incomingProject = fields.string("projectName", "project_name");
+        if(incomingCustomer!=null&&incomingProject!=null)identities.acquire(incomingCustomer,incomingProject);
 
         Project existing = findExisting(externalId, incomingCustomer, incomingProject);
+        // A concurrent hard-delete may have committed while the identity/project lock was awaited.
+        history.assertCurrentImportAllowed(record);
         if (existing == null && externalId != null) {
             Project deletedMatch = projectRepository.findByExternalId(externalId).orElse(null);
             if (deletedMatch != null && deletedMatch.isDeleted()) {
@@ -72,6 +91,7 @@ public class ImportRecordProcessor {
                 values.forEach((k, v) -> { if (v == null || v instanceof String s && s.isBlank()) custom.remove(String.valueOf(k)); else custom.put(String.valueOf(k), v); });
             } else effective.put(canonical, value);
         });
+        if(!record.fields().containsKey("solutions")&&(record.fields().containsKey("solution")||record.fields().containsKey("subSolution")||record.fields().containsKey("sub_solution")))effective.remove("solutions");
         if (!(effective.containsKey("customFields") && !(effective.get("customFields") instanceof Map))) effective.put("customFields", custom);
         List<ImportIssue> issues = importValidator.validate(effective, record, pending);
         if (!issues.isEmpty()) throw new ImportValidationException(issues, effective);
@@ -83,13 +103,15 @@ public class ImportRecordProcessor {
         var knownKeys = importValidator.existingKeys();
         knownCustom.keySet().removeIf(key -> !knownKeys.contains(key));
         known.put("customFields", knownCustom);
-        try {
+        if(dryRun)try {
             projectService.validate(buildProjectRequest(new FieldBag(known), null), existing == null ? null : existing.getId());
         } catch (BusinessException exception) {
             throw new ImportValidationException(List.of(new ImportIssue("_record", "conflict", exception.getMessage())), effective);
         }
 
         ProjectRequest projectRequest = buildProjectRequest(new FieldBag(effective), null);
+        var identities = identities(existing == null ? null : existing.getId(), projectRequest.externalId(), projectRequest.customerName(), projectRequest.projectName());
+        if (identities.stream().anyMatch(seen::contains)) throw new ImportValidationException(List.of(new ImportIssue("_record", "duplicate", "同批次项目重复，仅处理首次通过的记录")), effective);
 
         if (dryRun) {
             return new ProcessedRecord(existing == null ? Action.ADDED : Action.OVERWRITTEN,
@@ -118,6 +140,13 @@ public class ImportRecordProcessor {
                 project.getCustomerName(), project.getProjectName(), effective);
     }
 
+    public static java.util.Set<String> identities(Long projectId,String externalId,String customer,String name) {
+        var keys = new java.util.HashSet<String>();
+        if(projectId!=null) keys.add("id:"+projectId);
+        if(externalId!=null&&!externalId.isBlank())keys.add("ext:"+externalId.toLowerCase(java.util.Locale.ROOT));
+        keys.add("name:"+String.valueOf(customer).toLowerCase(java.util.Locale.ROOT)+"\u0000"+String.valueOf(name).toLowerCase(java.util.Locale.ROOT));return keys;
+    }
+
     private String camelKey(String key) {
         StringBuilder result = new StringBuilder(); boolean upper = false;
         for (char c : key.toCharArray()) { if (c == '_') upper = true; else { result.append(upper ? Character.toUpperCase(c) : c); upper = false; } }
@@ -125,15 +154,23 @@ public class ImportRecordProcessor {
     }
 
     private Project findExisting(String externalId, String customerName, String projectName) {
+        var snapshot=ImportBatchLookup.current();
+        if(snapshot!=null){
+            var candidate=externalId==null?null:snapshot.external().get(externalId.toLowerCase(java.util.Locale.ROOT));
+            if(candidate==null)candidate=snapshot.names().get(ImportBatchLookup.pair(customerName,projectName));
+            if(candidate!=null&&!candidate.deleted()){
+                var fresh=projectRepository.findByIdForUpdate(candidate.id()).orElse(null);
+                if(fresh!=null&&!fresh.isDeleted()&&(externalId!=null&&externalId.equalsIgnoreCase(fresh.getExternalId())||fresh.getCustomerName().equalsIgnoreCase(String.valueOf(customerName))&&fresh.getProjectName().equalsIgnoreCase(String.valueOf(projectName))))return fresh;
+            }
+        }
         if (externalId != null) {
-            Project byExternalId = projectRepository.findFirstByExternalIdAndDeletedFalse(externalId).orElse(null);
+            Project byExternalId = projectRepository.findByExternalIdForUpdate(externalId).filter(p->!p.isDeleted()).orElse(null);
             if (byExternalId != null) {
-                return byExternalId;
+                return projectService.getActiveEntityForUpdate(byExternalId.getId());
             }
         }
         if (customerName != null && projectName != null) {
-            return projectRepository.findFirstByCustomerNameIgnoreCaseAndProjectNameIgnoreCaseAndDeletedFalse(
-                    customerName, projectName).orElse(null);
+            return projectRepository.findActiveByNameForUpdate(customerName,projectName).orElse(null);
         }
         return null;
     }
@@ -176,7 +213,13 @@ public class ImportRecordProcessor {
                 value(fields, existing, "scenario", "scenario", existing == null ? null : existing.getScenario()),
                 value(fields, existing, "keyRisks", "key_risks", existing == null ? null : existing.getKeyRisks()),
                 value(fields, existing, "keyNeeds", "key_needs", existing == null ? null : existing.getKeyNeeds()),
-                customFields
+                customFields,
+                fields.string("nextActionDate","next_action_date")==null?null:java.time.LocalDate.parse(fields.string("nextActionDate","next_action_date")),
+                fields.string("nextActionNote","next_action_note"),
+                fields.string("securityDirection","security_direction"),
+                fields.contains("solutions","solutions")?mapper.convertValue(fields.raw("solutions","solutions"),new TypeReference<List<com.presales.pipeline.solution.SolutionSelection>>(){}):null,
+                fields.string("hcsOpportunityId","hcs_opportunity_id"),
+                fields.contains("responsibleIds","responsible_ids")?mapper.convertValue(fields.raw("responsibleIds","responsible_ids"),new TypeReference<List<Long>>(){}):null
         );
     }
 

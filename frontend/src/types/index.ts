@@ -7,9 +7,15 @@ export type ID = number
 export type MonthStr = string
 /** 日期 YYYY-MM-DD */
 export type DateStr = string
+export interface SolutionSelection { solution: string; subSolutions: string[] }
 
 // ---------- 项目 ----------
 export interface Project {
+  hcsOpportunityId?: string | null
+  hcsStatus?: string | null
+  lastSyncAt?: string | null
+  responsibleIds?: ID[]
+  responsibles?: { personId: ID; name: string; employeeNo?: string | null; account?: string | null; source: string; role?: string | null }[]
   id: ID
   /** 外部系统编号（判重首选），可空 */
   externalId: string | null
@@ -20,8 +26,10 @@ export interface Project {
   securityBudget: number | null
   solution: string
   subSolution: string
+  solutions?: SolutionSelection[]
   purchasedProducts: string[]
   track: string
+  securityDirection?: string | null
   industry: string
   subIndustry: string
   scenario: string
@@ -34,9 +42,12 @@ export interface Project {
   deleted: boolean
   createdAt: string
   updatedAt: string
+  lastFollowUpAt?: string | null
+  nextActionDate?: string | null
+  nextActionNote?: string
 }
 
-export type ProjectInput = Omit<Project, 'id' | 'revenueTotal' | 'deleted' | 'createdAt' | 'updatedAt'>
+export type ProjectInput = Omit<Project, 'id' | 'revenueTotal' | 'deleted' | 'createdAt' | 'updatedAt' | 'lastFollowUpAt' | 'hcsStatus' | 'lastSyncAt' | 'responsibles'>
 
 export const PROJECT_STATUSES = ['机会点识别', '方案引导', '方案设计', '中标'] as const
 export type ProjectStatus = (typeof PROJECT_STATUSES)[number]
@@ -119,6 +130,7 @@ export interface CustomFieldDef {
   options: string[]
   /** 关联自定义字典；options 为当前有效字典值，null 表示手动维护选项 */
   dictionaryType?: string | null
+  applicableTracks?: string[]
   sortOrder: number
   createdAt?: string
   updatedAt?: string
@@ -137,6 +149,7 @@ export type ValueRule =
   | { type: 'default'; field: string; value: string }
 
 export interface ImportMapping {
+  applicableTrack?: string | null
   id: ID
   name: string
   /** 列名映射：Excel 列名 → 目标字段 key（'progressText' 表示进展多行文本列；'revenue:YYYY-MM' 表示某月收入列；'custom.xxx' 自定义字段） */
@@ -154,6 +167,7 @@ export interface ExportColumn {
   title: string
 }
 export interface ExportTemplate {
+  applicableTrack?: string | null
   id: ID
   name: string
   scope: ExportScope

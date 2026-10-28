@@ -1,5 +1,6 @@
-import { PROJECT_FIELD_LABELS, REQUIRED_PROJECT_FIELDS } from '@/lib/fields'
+import { PROJECT_FIELD_LABELS, REQUIRED_PROJECT_FIELDS, appliesToTrack } from '@/lib/fields'
 import type { CustomFieldDef, Project, ProjectInput } from '@/types'
+import { normalizeSolutions, solutionSelections, withSolutions } from '@/lib/solutions'
 
 // ============================================================
 // 项目表单/编辑的纯函数工具：列表行内编辑、新建 Dialog、详情概览共用
@@ -8,20 +9,24 @@ import type { CustomFieldDef, Project, ProjectInput } from '@/types'
 export function emptyProjectInput(): ProjectInput {
   return {
     externalId: null,
+    hcsOpportunityId: '', responsibleIds: [],
     customerName: '',
     projectName: '',
     projectStatus: '机会点识别',
     securityBudget: null,
     solution: '',
     subSolution: '',
+    solutions: [],
     purchasedProducts: [],
     track: '',
+    securityDirection: '',
     industry: '',
     subIndustry: '',
     scenario: '',
     keyNeeds: '',
     keyRisks: '',
     customFields: {},
+    nextActionDate: null, nextActionNote: '',
   }
 }
 
@@ -29,20 +34,24 @@ export function emptyProjectInput(): ProjectInput {
 export function projectToInput(p: Project): ProjectInput {
   return {
     externalId: p.externalId,
+    hcsOpportunityId: p.hcsOpportunityId ?? '', responsibleIds: [...(p.responsibleIds ?? [])],
     customerName: p.customerName,
     projectName: p.projectName,
     projectStatus: p.projectStatus ?? '机会点识别',
     securityBudget: p.securityBudget ?? null,
     solution: p.solution ?? '',
     subSolution: p.subSolution ?? '',
+    solutions: solutionSelections(p).map((s) => ({ ...s, subSolutions: [...s.subSolutions] })),
     purchasedProducts: [...(p.purchasedProducts ?? [])],
     track: p.track ?? '',
+    securityDirection: p.securityDirection ?? '',
     industry: p.industry ?? '',
     subIndustry: p.subIndustry ?? '',
     scenario: p.scenario ?? '',
     keyNeeds: p.keyNeeds ?? '',
     keyRisks: p.keyRisks ?? '',
     customFields: { ...(p.customFields ?? {}) },
+    nextActionDate: p.nextActionDate ?? null, nextActionNote: p.nextActionNote ?? '',
   }
 }
 
@@ -53,12 +62,15 @@ export function validateProjectInput(input: ProjectInput, customDefs: CustomFiel
   }
   const budgetError = validateSecurityBudget(input.securityBudget)
   if (budgetError) return budgetError
+  const selections = solutionSelections(input)
+  if (selections.some((s) => !s.solution.trim())) return '请选择或移除空的解决方案'
   if (input.projectStatus === '中标') {
-    if (!input.solution.trim()) return '中标时请选择解决方案'
-    if (!input.subSolution.trim()) return '中标时请选择细分解决方案'
+    if (!selections.length) return '中标时请选择解决方案'
+    if (!selections.some((s) => s.subSolutions.length)) return '中标时请选择细分解决方案'
     if (input.purchasedProducts.length === 0) return '中标时至少选择一个已购产品'
   }
   for (const def of customDefs) {
+    if (!appliesToTrack(def, input.track)) continue
     if (!def.required) continue
     const v = input.customFields?.[def.fieldKey]
     if (v == null || String(v).trim() === '') return `请填写${def.label}`
@@ -70,6 +82,7 @@ export function validateProjectInput(input: ProjectInput, customDefs: CustomFiel
 export function normalizeForSubmit(input: ProjectInput, customDefs: CustomFieldDef[]): ProjectInput {
   const customFields: Record<string, unknown> = { ...(input.customFields ?? {}) }
   for (const def of customDefs) {
+    if (!appliesToTrack(def, input.track)) continue
     const raw = customFields[def.fieldKey]
     if (raw == null) continue
     if (def.fieldType === 'number') {
@@ -78,7 +91,8 @@ export function normalizeForSubmit(input: ProjectInput, customDefs: CustomFieldD
     }
   }
   return {
-    ...input,
+    ...withSolutions(input, normalizeSolutions(solutionSelections(input))),
+    nextActionDate: input.nextActionDate || null,
     externalId: input.externalId?.trim() ? input.externalId.trim() : null,
     securityBudget: input.securityBudget == null || String(input.securityBudget).trim() === ''
       ? null
@@ -106,10 +120,10 @@ export function applyFieldEdit(input: ProjectInput, key: string, value: string):
     return { ...input, industry: value, subIndustry: '' }
   }
   if (key === 'solution') {
-    return { ...input, solution: value, subSolution: '', purchasedProducts: [] }
+    return withSolutions(input, value ? [{ solution: value, subSolutions: [] }] : [])
   }
   if (key === 'subSolution') {
-    return { ...input, subSolution: value, purchasedProducts: [] }
+    return withSolutions(input, input.solution ? [{ solution: input.solution, subSolutions: value ? [value] : [] }] : [])
   }
   if (key === 'purchasedProducts') {
     return { ...input, purchasedProducts: value.split(/[、,，]/).map((v) => v.trim()).filter(Boolean) }
@@ -119,6 +133,9 @@ export function applyFieldEdit(input: ProjectInput, key: string, value: string):
 
 /** 修改日志的字段名翻译：基础字段查表 / custom.xxx / revenue:YYYY-MM */
 export function changeLogFieldLabel(field: string, customDefs: CustomFieldDef[]): string {
+  if (field === 'projectIdentity') return '项目匹配标识'
+  if (field === 'responsibles' || field === 'responsibleIds') return '责任人'
+  if (field.startsWith('progress.')) return '进展修正'
   if (field.startsWith('custom.')) {
     const k = field.slice(7)
     return customDefs.find((d) => d.fieldKey === k)?.label ?? field
@@ -131,5 +148,6 @@ export function changeLogFieldLabel(field: string, customDefs: CustomFieldDef[])
 export function changeLogSourceLabel(source: string): string {
   if (source === 'manual') return '手工'
   if (source === 'import') return '导入'
+  if (source === 'hcs') return 'HCS'
   return source
 }

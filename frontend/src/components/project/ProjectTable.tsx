@@ -20,9 +20,12 @@ import { useCustomFieldDefs, useDictionaries, useProjectMutations } from '@/hook
 import { getProjectFieldValue, industryCascade, solutionCascade } from '@/lib/fields'
 import { fmtAmount } from '@/lib/format'
 import { cn } from '@/lib/utils'
+import { actionReminder } from '@/lib/actions'
 import type { ID, Project } from '@/types'
 
 interface Props {
+  today: string
+  onCompleteAction: (project: Project) => void
   projects: Project[]
   /** 可见列（已按用户顺序） */
   columns: PipelineColumn[]
@@ -60,6 +63,8 @@ export function ProjectTable({
   onOpenDetail,
   onRequestDelete,
   onRequestWin,
+  today,
+  onCompleteAction,
 }: Props) {
   const [editing, setEditing] = useState<Editing | null>(null)
   const clickTimer = useRef<number | null>(null)
@@ -67,19 +72,21 @@ export function ProjectTable({
   const { update, restore } = useProjectMutations()
   const industryQ = useDictionaries('industry')
   const trackQ = useDictionaries('track')
+  const directionQ = useDictionaries('security_direction')
   const solutionQ = useDictionaries('solution')
   const customDefsQ = useCustomFieldDefs()
 
   const cascade = industryCascade(industryQ.data ?? [])
   const solutions = solutionCascade(solutionQ.data ?? [])
 
-  const isEditable = (key: string) => !recycleBin && !deleting && !['revenueTotal', 'projectStatus', 'purchasedProducts'].includes(key)
+  const isEditable = (key: string) => !recycleBin && !deleting && !['revenueTotal', 'projectStatus', 'purchasedProducts', 'lastFollowUpAt', 'solutions', 'solution', 'subSolution', 'responsibles', 'hcsStatus'].includes(key)
 
   const dictOptionsFor = (key: string, row: Project): SelectOption[] | null => {
     const toOptions = (values: string[]) => values.map((v) => ({ value: v, label: v }))
     if (key === 'industry') return toOptions(cascade.industries.map((n) => n.value))
     if (key === 'subIndustry') return toOptions((cascade.subMap.get(row.industry) ?? []).map((n) => n.value))
     if (key === 'track') return toOptions((trackQ.data ?? []).map((n) => n.value))
+    if (key === 'securityDirection') return toOptions((directionQ.data ?? []).map((n) => n.value))
     if (key === 'solution') return toOptions(solutions.solutions.map((n) => n.value))
     if (key === 'subSolution') return toOptions((solutions.subMap.get(row.solution) ?? []).map((n) => n.value))
     if (key.startsWith('custom.')) {
@@ -137,7 +144,7 @@ export function ProjectTable({
     }
     return (
       <Input
-        type={editing.key === 'securityBudget' ? 'number' : 'text'}
+        type={editing.key === 'securityBudget' ? 'number' : editing.key === 'nextActionDate' ? 'date' : 'text'}
         min={editing.key === 'securityBudget' ? '0' : undefined}
         step={editing.key === 'securityBudget' ? '0.01' : undefined}
         autoFocus
@@ -200,7 +207,7 @@ export function ProjectTable({
       </TableHeader>
       <TableBody>
         {projects.map((p) => (
-          <TableRow key={p.id} className={recycleBin ? undefined : 'cursor-pointer'} data-state={selectedIds.has(p.id) ? 'selected' : undefined} onClick={(e) => handleRowClick(p, e)}>
+          <TableRow key={p.id} className={cn(!recycleBin && 'cursor-pointer', !recycleBin && actionReminder(p.nextActionDate, today).group === 0 && 'border-l-4 border-l-red-500 bg-red-50/30')} data-state={selectedIds.has(p.id) ? 'selected' : undefined} onClick={(e) => handleRowClick(p, e)}>
             <TableCell onClick={(event) => event.stopPropagation()}>
               <Checkbox aria-label={`选择项目 ${p.customerName} · ${p.projectName}`} disabled={deleting} checked={selectedIds.has(p.id)}
                 onCheckedChange={(checked) => onSelectProject(p, checked === true)} />
@@ -221,6 +228,8 @@ export function ProjectTable({
                 >
                   {isEditing
                     ? renderEditor(p)
+                    : col.key === 'nextActionDate' ? <span className={cn('inline-flex flex-col rounded border border-transparent px-2 py-1 text-xs', actionReminder(p.nextActionDate, today).tone)}><span>{p.nextActionDate}</span><span>{actionReminder(p.nextActionDate, today).label}</span></span>
+                    : col.key === 'lastFollowUpAt' ? p.lastFollowUpAt?.replace('T', ' ').slice(0, 19) ?? '无业务修改记录'
                     : col.key === 'revenueTotal' || col.key === 'securityBudget'
                       ? fmtAmount(col.key === 'revenueTotal' ? p.revenueTotal : p.securityBudget)
                       : getProjectFieldValue(p, col.key) || <span className="text-muted-foreground/50">-</span>}
@@ -244,6 +253,7 @@ export function ProjectTable({
                 </div>
               ) : (
                 <div className="flex justify-end gap-1">
+                  {p.nextActionDate && <Button variant="outline" size="xs" onClick={() => onCompleteAction(p)}>完成本次行动</Button>}
                   {p.projectStatus === '中标' ? (
                     <Badge variant="success" className="self-center">已中标</Badge>
                   ) : (

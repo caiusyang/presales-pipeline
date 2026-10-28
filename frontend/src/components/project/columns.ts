@@ -19,7 +19,7 @@ export interface ColumnState {
 const STORAGE_KEY = 'pipeline-columns-v1'
 
 /** 支持排序的列（与后端 sortBy 对齐） */
-const SORTABLE_KEYS = new Set(['customerName', 'projectName', 'projectStatus', 'industry', 'track', 'createdAt', 'updatedAt'])
+const SORTABLE_KEYS = new Set(['customerName', 'projectName', 'projectStatus', 'industry', 'track', 'createdAt', 'updatedAt', 'nextActionDate', 'lastFollowUpAt'])
 
 export function isSortableColumn(key: string): boolean {
   return SORTABLE_KEYS.has(key)
@@ -39,10 +39,10 @@ export function buildAvailableColumns(customDefs: CustomFieldDef[]): PipelineCol
 }
 
 /** 读取持久化配置并与当前可用列合并：已删除的列剔除，新增列按 defaultVisible 追加到末尾 */
-export function loadColumnStates(available: PipelineColumn[]): ColumnState[] {
+export function loadColumnStates(available: PipelineColumn[], track = ''): ColumnState[] {
   let stored: ColumnState[] = []
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
+    const raw = localStorage.getItem(`${STORAGE_KEY}:${track || 'all'}`) ?? localStorage.getItem(STORAGE_KEY)
     if (raw) {
       const parsed: unknown = JSON.parse(raw)
       if (Array.isArray(parsed)) {
@@ -64,9 +64,9 @@ export function loadColumnStates(available: PipelineColumn[]): ColumnState[] {
   return merged
 }
 
-export function saveColumnStates(states: ColumnState[]): void {
+export function saveColumnStates(states: ColumnState[], track = ''): void {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(states))
+    localStorage.setItem(`${STORAGE_KEY}:${track || 'all'}`, JSON.stringify(states))
   } catch {
     // 隐私模式等场景写入失败，忽略
   }

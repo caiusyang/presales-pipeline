@@ -32,6 +32,7 @@ import java.math.RoundingMode;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -44,6 +45,7 @@ public class ProjectService {
     public static final List<String> PROJECT_STATUSES = List.of("机会点识别", "方案引导", "方案设计", WON_STATUS);
 
     private static final Map<String, String> SORT_FIELDS = Map.of(
+            "nextActionDate", "nextActionDate", "lastFollowUpAt", "lastFollowUpAt",
             "id", "id",
             "customerName", "customerName",
             "projectName", "projectName",
@@ -63,6 +65,14 @@ public class ProjectService {
     private final DictionaryService dictionaryService;
     private final ProjectProductService projectProductService;
     private final ProjectProductRepository projectProductRepository;
+    private final ProductCatalog productCatalog;
+    private final com.presales.pipeline.solution.ProjectSolutions solutions;
+    private final com.presales.pipeline.solution.ProjectSolutionRepository solutionRepository;
+    private final com.presales.pipeline.people.PeopleService people;
+    private final com.presales.pipeline.people.ProjectPersonRepository personRepository;
+    private final ProjectIdentityGuard identityGuard;
+    private final com.presales.pipeline.migration.MigrationIssueRepository migrationIssues;
+    private final com.presales.pipeline.tasks.TaskHistoryService taskHistory;
 
     public ProjectService(ProjectRepository projectRepository,
                           RevenueRepository revenueRepository,
@@ -72,7 +82,13 @@ public class ProjectService {
                           ConfigService configService,
                           DictionaryService dictionaryService,
                           ProjectProductService projectProductService,
-                          ProjectProductRepository projectProductRepository) {
+                          ProjectProductRepository projectProductRepository,com.presales.pipeline.migration.MigrationIssueRepository migrationIssues,ProductCatalog productCatalog,com.presales.pipeline.solution.ProjectSolutions solutions,com.presales.pipeline.solution.ProjectSolutionRepository solutionRepository,com.presales.pipeline.people.PeopleService people,com.presales.pipeline.people.ProjectPersonRepository personRepository,ProjectIdentityGuard identityGuard,com.presales.pipeline.tasks.TaskHistoryService taskHistory) {
+        this.taskHistory=taskHistory;
+        this.identityGuard=identityGuard;
+        this.people=people;this.personRepository=personRepository;
+        this.solutions=solutions;this.solutionRepository=solutionRepository;
+        this.productCatalog=productCatalog;
+        this.migrationIssues=migrationIssues;
         this.projectRepository = projectRepository;
         this.revenueRepository = revenueRepository;
         this.progressRepository = progressRepository;
@@ -96,6 +112,19 @@ public class ProjectService {
                                           String sortBy,
                                           String sortDirection,
                                           boolean deleted) {
+        return list(industry,track,projectStatus,keyword,startMonth,endMonth,page,size,sortBy,sortDirection,deleted,null);
+    }
+
+    @Transactional(readOnly=true)
+    public PageData<ProjectResponse> list(String industry,String track,String projectStatus,String keyword,String startMonth,String endMonth,int page,int size,String sortBy,String sortDirection,boolean deleted,String actionRange) {
+        return list(industry,track,projectStatus,keyword,startMonth,endMonth,page,size,sortBy,sortDirection,deleted,actionRange,null,null);
+    }
+    @Transactional(readOnly=true)
+    public PageData<ProjectResponse> list(String industry,String track,String projectStatus,String keyword,String startMonth,String endMonth,int page,int size,String sortBy,String sortDirection,boolean deleted,String actionRange,String solution,String subSolution) {
+        return list(industry,track,projectStatus,keyword,startMonth,endMonth,page,size,sortBy,sortDirection,deleted,actionRange,solution,subSolution,null,null);
+    }
+    @Transactional(readOnly=true)
+    public PageData<ProjectResponse> list(String industry,String track,String projectStatus,String keyword,String startMonth,String endMonth,int page,int size,String sortBy,String sortDirection,boolean deleted,String actionRange,String solution,String subSolution,Long responsibleId,String hcsStatus) {
         String start = MonthUtils.validateNullable(startMonth, "开始月份");
         String end = MonthUtils.validateNullable(endMonth, "结束月份");
         MonthUtils.validateRange(start, end);
@@ -107,9 +136,9 @@ public class ProjectService {
         }
         String property = SORT_FIELDS.getOrDefault(sortBy, "updatedAt");
         Sort.Direction direction = "asc".equalsIgnoreCase(sortDirection) ? Sort.Direction.ASC : Sort.Direction.DESC;
-        Page<Project> result = projectRepository.findAll(
-                ProjectSpecifications.filter(industry, track, projectStatus, keyword, start, end, deleted),
-                PageRequest.of(page, size, Sort.by(direction, property)));
+        boolean actionSort=sortBy==null||sortBy.isBlank()||sortBy.equals("actionPriority");
+        var specification=ProjectSpecifications.filter(industry,track,projectStatus,keyword,start,end,deleted).and(ProjectSpecifications.actions(actionRange,actionSort)).and(ProjectSpecifications.solutions(solution,subSolution)).and(ProjectSpecifications.people(responsibleId,hcsStatus));
+        Page<Project> result = projectRepository.findAll(specification,actionSort?PageRequest.of(page,size):PageRequest.of(page,size,Sort.by(direction,property).and(Sort.by("id"))));
 
         List<Long> ids = result.getContent().stream().map(Project::getId).toList();
         Map<Long, BigDecimal> totals = revenueTotals(ids, start, end);
@@ -142,7 +171,7 @@ public class ProjectService {
 
     @Transactional
     public ProjectResponse update(Long id, ProjectRequest request) {
-        Project project = getActiveEntity(id);
+        Project project = getActiveEntityForUpdate(id);
         applyUpdate(project, request, ChangeLogService.SOURCE_MANUAL);
         BigDecimal total = revenueRepository.findAllByProjectIdAndDeletedFalseOrderByMonthAsc(id).stream()
                 .map(Revenue::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
@@ -151,7 +180,7 @@ public class ProjectService {
 
     @Transactional
     public void delete(Long id) {
-        Project project = getActiveEntity(id);
+        Project project = getActiveEntityForUpdate(id);
         changeLogService.log(project, "deleted", false, true, ChangeLogService.SOURCE_MANUAL);
         project.setDeleted(true);
     }
@@ -164,9 +193,17 @@ public class ProjectService {
             throw BusinessException.conflict("仅允许永久删除回收站中的项目，请先移入回收站");
         }
         // 不按 deleted 过滤：已软删除的子记录也必须物理清理，且先于主表删除。
+        taskHistory.record(project,progressRepository.allIdsForProject(id));
+        boolean batchPurge=taskHistory.isBatchPurge();
+        org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(new org.springframework.transaction.support.TransactionSynchronization(){
+            @Override public void afterCommit(){if(batchPurge)return;try{taskHistory.cleanup();}catch(Exception error){org.slf4j.LoggerFactory.getLogger(ProjectService.class).error("项目任务快照清理失败；读取端仍执行脱敏，并在启动或任务结束时重试",error);}}
+        });
         revenueRepository.deleteAllByProjectId(id);
         progressRepository.deleteAllByProjectId(id);
         projectProductRepository.deleteAllByProjectId(id);
+        migrationIssues.deleteByProject(id);
+        solutionRepository.deleteByProject(id);
+        personRepository.deleteByProject(id);
         changeLogRepository.deleteAllByProjectId(id);
         projectRepository.delete(project);
         projectRepository.flush();
@@ -179,8 +216,8 @@ public class ProjectService {
         if (!project.isDeleted()) {
             return toResponse(project, totalRevenue(project.getId()));
         }
-        if (projectRepository.existsByCustomerNameIgnoreCaseAndProjectNameIgnoreCaseAndDeletedFalseAndIdNot(
-                project.getCustomerName(), project.getProjectName(), project.getId())) {
+        identityGuard.acquire(project.getCustomerName(),project.getProjectName());
+        if (projectRepository.findActiveByNameForUpdate(project.getCustomerName(),project.getProjectName()).filter(p->!p.getId().equals(project.getId())).isPresent()) {
             throw BusinessException.conflict("已有同客户、同项目名称的活动项目，无法恢复");
         }
         changeLogService.log(project, "deleted", true, false, ChangeLogService.SOURCE_MANUAL);
@@ -193,13 +230,20 @@ public class ProjectService {
         return projectRepository.findByIdAndDeletedFalse(id)
                 .orElseThrow(() -> BusinessException.notFound("项目不存在"));
     }
+    @Transactional public Project getActiveEntityForUpdate(Long id){var project=projectRepository.findByIdForUpdate(id).orElseThrow(()->BusinessException.notFound("项目不存在"));if(project.isDeleted())throw BusinessException.conflict("项目已移入回收站，请刷新后处理");return project;}
 
     @Transactional
     public Project createEntity(ProjectRequest request, String source) {
+        identityGuard.acquire(request.customerName(),request.projectName());
         NormalizedProject normalized = normalizeAndValidate(request, null);
         Project project = new Project();
         setAll(project, normalized);
+        project.setNextActionDate(request.nextActionDate());project.setNextActionNote(cleanNullable(request.nextActionNote()));
+        project.setSecurityDirection(cleanNullable(request.securityDirection()));
+        project.setHcsOpportunityId(cleanNullable(request.hcsOpportunityId()));
         projectRepository.save(project);
+        solutions.sync(project,normalized.solutions());
+        people.syncManual(project,request.responsibleIds());
         projectProductService.sync(project, normalized.purchasedProducts());
         changeLogService.log(project, "project", null, "created", source);
         return project;
@@ -207,7 +251,16 @@ public class ProjectService {
 
     @Transactional
     public void applyUpdate(Project project, ProjectRequest request, String source) {
+        identityGuard.acquire(request.customerName(),request.projectName());
         NormalizedProject normalized = normalizeAndValidate(request, project.getId());
+        if(!Objects.equals(project.getCustomerName(),normalized.customerName())||!Objects.equals(project.getProjectName(),normalized.projectName())||!Objects.equals(project.getExternalId(),normalized.externalId())){
+            var beforeIdentity=new LinkedHashMap<String,Object>();beforeIdentity.put("customerName",project.getCustomerName());beforeIdentity.put("projectName",project.getProjectName());beforeIdentity.put("externalId",project.getExternalId());
+            var afterIdentity=new LinkedHashMap<String,Object>();afterIdentity.put("customerName",normalized.customerName());afterIdentity.put("projectName",normalized.projectName());afterIdentity.put("externalId",normalized.externalId());
+            changeLogService.log(project,"projectIdentity",beforeIdentity,afterIdentity,source);
+        }
+        var previousSolutions=project.getSolutions();
+        if(request.responsibleIds()!=null){var ids=request.responsibleIds().stream().distinct().sorted().toList();if(changeLogService.logIfChanged(project,"responsibleIds",project.getResponsibleIds(),ids,source))people.syncManual(project,ids);}
+        if(request.hcsOpportunityId()!=null)changeAndSet(project,"hcsOpportunityId",project.getHcsOpportunityId(),cleanNullable(request.hcsOpportunityId()),project::setHcsOpportunityId,source);
         changeAndSet(project, "externalId", project.getExternalId(), normalized.externalId(), project::setExternalId, source);
         changeAndSet(project, "customerName", project.getCustomerName(), normalized.customerName(), project::setCustomerName, source);
         changeAndSet(project, "projectName", project.getProjectName(), normalized.projectName(), project::setProjectName, source);
@@ -216,17 +269,23 @@ public class ProjectService {
                 project::setSecurityBudget, source);
         changeAndSet(project, "solution", project.getSolution(), normalized.solution(), project::setSolution, source);
         changeAndSet(project, "subSolution", project.getSubSolution(), normalized.subSolution(), project::setSubSolution, source);
+        if(changeLogService.logIfChanged(project,"solutions",previousSolutions,normalized.solutions(),source)||project.solutionLinks().isEmpty())solutions.sync(project,normalized.solutions());
+        migrationIssues.findByProjectIdAndArea(project.getId(),"solutions").forEach(issue->issue.resolved=true);
         if (changeLogService.logIfChanged(project, "purchasedProducts", project.getPurchasedProducts(),
                 normalized.purchasedProducts(), source)) {
             project.setPurchasedProducts(normalized.purchasedProducts());
+            projectProductService.sync(project, normalized.purchasedProducts());
         }
-        projectProductService.sync(project, normalized.purchasedProducts());
         changeAndSet(project, "track", project.getTrack(), normalized.track(), project::setTrack, source);
+        changeAndSet(project,"securityDirection",project.getSecurityDirection(),cleanNullable(request.securityDirection()),project::setSecurityDirection,source);
+        if(List.of("HCS","公有云").contains(String.valueOf(normalized.track())))migrationIssues.findByProjectIdAndArea(project.getId(),"track").forEach(issue->issue.resolved=true);
         changeAndSet(project, "industry", project.getIndustry(), normalized.industry(), project::setIndustry, source);
         changeAndSet(project, "subIndustry", project.getSubIndustry(), normalized.subIndustry(), project::setSubIndustry, source);
         changeAndSet(project, "scenario", project.getScenario(), normalized.scenario(), project::setScenario, source);
         changeAndSet(project, "keyRisks", project.getKeyRisks(), normalized.keyRisks(), project::setKeyRisks, source);
         changeAndSet(project, "keyNeeds", project.getKeyNeeds(), normalized.keyNeeds(), project::setKeyNeeds, source);
+        changeAndSet(project,"nextActionDate",project.getNextActionDate(),request.nextActionDate(),project::setNextActionDate,source);
+        changeAndSet(project,"nextActionNote",project.getNextActionNote(),cleanNullable(request.nextActionNote()),project::setNextActionNote,source);
 
         Set<String> customKeys = new LinkedHashSet<>(project.getCustomFields().keySet());
         customKeys.addAll(normalized.customFields().keySet());
@@ -237,7 +296,7 @@ public class ProjectService {
         project.setCustomFields(normalized.customFields());
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public void validate(ProjectRequest request, Long currentId) {
         normalizeAndValidate(request, currentId);
     }
@@ -248,11 +307,21 @@ public class ProjectService {
                 project.getSubSolution(), project.getPurchasedProducts(), project.getTrack(),
                 project.getIndustry(), project.getSubIndustry(), project.getScenario(), project.getKeyRisks(),
                 project.getKeyNeeds(), project.getCustomFields(), revenueTotal, project.isDeleted(),
-                project.getCreatedAt(), project.getUpdatedAt());
+                project.getCreatedAt(), project.getUpdatedAt(),project.getLastFollowUpAt(),project.getNextActionDate(),project.getNextActionNote(),project.getSecurityDirection(),project.getSolutions(),project.getHcsOpportunityId(),project.getHcsStatus(),project.getLastSyncAt(),project.getResponsibleIds(),project.getResponsibles());
+    }
+
+    @Transactional public ProjectResponse completeAction(Long id,java.time.LocalDate date,String note){
+        var project=getActiveEntityForUpdate(id);if(note!=null&&note.length()>20000)throw BusinessException.badRequest("行动内容超过长度限制");
+        changeAndSet(project,"nextActionDate",project.getNextActionDate(),date,project::setNextActionDate,ChangeLogService.SOURCE_MANUAL);
+        changeAndSet(project,"nextActionNote",project.getNextActionNote(),cleanNullable(note),project::setNextActionNote,ChangeLogService.SOURCE_MANUAL);
+        return toResponse(project,totalRevenue(id));
     }
 
     private NormalizedProject normalizeAndValidate(ProjectRequest request, Long currentId) {
+        var previous=currentId==null?null:projectRepository.findById(currentId).orElseThrow(()->BusinessException.notFound("项目不存在"));
         String externalId = cleanNullable(request.externalId());
+        String hcsId=cleanNullable(request.hcsOpportunityId());if(hcsId!=null&&projectRepository.existsByHcsOpportunityIdAndIdNot(hcsId,idOrSentinel(currentId)))throw BusinessException.conflict("HCS机会点编号已被其他项目绑定");
+        people.validateManual(previous,request.responsibleIds());
         String customerName = request.customerName().trim();
         String projectName = request.projectName().trim();
         String projectStatus = cleanNullable(request.projectStatus());
@@ -262,19 +331,22 @@ public class ProjectService {
         if (!PROJECT_STATUSES.contains(projectStatus)) {
             throw BusinessException.badRequest("项目状态只能是：" + String.join("、", PROJECT_STATUSES));
         }
-        if (externalId != null && projectRepository.existsByExternalIdAndIdNot(externalId, idOrSentinel(currentId))) {
+        if (externalId != null && projectRepository.findByExternalIdForUpdate(externalId).filter(p->!p.getId().equals(idOrSentinel(currentId))).isPresent()) {
             throw BusinessException.conflict("外部系统编号已被其他项目使用");
         }
-        if (projectRepository.existsByCustomerNameIgnoreCaseAndProjectNameIgnoreCaseAndDeletedFalseAndIdNot(
-                customerName, projectName, idOrSentinel(currentId))) {
+        if (projectRepository.findActiveByNameForUpdate(customerName,projectName).filter(p->!p.getId().equals(idOrSentinel(currentId))).isPresent()) {
             throw BusinessException.conflict("同一客户下已存在同名项目");
         }
 
         BigDecimal securityBudget = normalizeSecurityBudget(request.securityBudget());
-        String solution = cleanNullable(request.solution());
-        String subSolution = cleanNullable(request.subSolution());
+        var selections=solutions.normalize(request.solutions(),request.solution(),request.subSolution());
+        String solution = selections.isEmpty()?null:selections.get(0).solution();
+        String subSolution = selections.isEmpty()||selections.get(0).subSolutions().isEmpty()?null:selections.get(0).subSolutions().get(0);
         List<String> purchasedProducts = normalizeProducts(request.purchasedProducts());
         String track = cleanNullable(request.track());
+        productCatalog.validateSelections(purchasedProducts,previous==null?List.of():previous.getPurchasedProducts(),track);
+        if(track!=null&&!List.of("HCS","公有云").contains(track))throw BusinessException.badRequest("赛道只能选择 HCS 或公有云；旧安全方向请映射到安全方向");
+        dictionaryService.validateSecurityDirection(request.securityDirection());
         String industry = cleanNullable(request.industry());
         String subIndustry = cleanNullable(request.subIndustry());
         dictionaryService.validateProjectSelections(solution, subSolution, purchasedProducts,
@@ -283,19 +355,19 @@ public class ProjectService {
             if (solution == null) {
                 throw BusinessException.badRequest("中标时必须确认解决方案");
             }
-            if (subSolution == null) {
+            if (selections.stream().noneMatch(selection->!selection.subSolutions().isEmpty())) {
                 throw BusinessException.badRequest("中标时必须确认细分解决方案");
             }
             if (purchasedProducts.isEmpty()) {
                 throw BusinessException.badRequest("中标时至少选择一个已购产品");
             }
         }
-        Map<String, Object> customFields = configService.normalizeAndValidateCustomFields(request.customFields());
+        Map<String, Object> customFields = configService.normalizeAndValidateCustomFields(request.customFields(),track);
 
         return new NormalizedProject(externalId, customerName, projectName, projectStatus, securityBudget, solution,
                 subSolution, purchasedProducts, track,
                 industry, subIndustry, cleanNullable(request.scenario()), cleanNullable(request.keyRisks()),
-                cleanNullable(request.keyNeeds()), customFields);
+                cleanNullable(request.keyNeeds()), customFields,selections);
     }
 
     private long idOrSentinel(Long id) {
@@ -332,18 +404,12 @@ public class ProjectService {
         if (projectIds.isEmpty()) {
             return totals;
         }
-        for (Revenue revenue : revenueRepository.findAllByProjectIdInAndDeletedFalse(projectIds)) {
-            if ((startMonth == null || revenue.getMonth().compareTo(startMonth) >= 0)
-                    && (endMonth == null || revenue.getMonth().compareTo(endMonth) <= 0)) {
-                totals.merge(revenue.getProject().getId(), revenue.getAmount(), BigDecimal::add);
-            }
-        }
+        for (var total : revenueRepository.totals(projectIds,startMonth,endMonth)) totals.put(total.getProjectId(),total.getAmount());
         return totals;
     }
 
     private BigDecimal totalRevenue(Long projectId) {
-        return revenueRepository.findAllByProjectIdAndDeletedFalseOrderByMonthAsc(projectId).stream()
-                .map(Revenue::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
+        return revenueRepository.totals(List.of(projectId),null,null).stream().map(RevenueRepository.Total::getAmount).findFirst().orElse(BigDecimal.ZERO);
     }
 
     private String cleanNullable(String value) {
@@ -372,7 +438,7 @@ public class ProjectService {
     }
 
     private List<String> normalizeProducts(List<String> values) {
-        return ProductCatalog.normalizeAll(values);
+        return productCatalog.normalizeAll(values);
     }
 
     private ProgressResponse toProgressResponse(ProgressLog log) {
@@ -405,7 +471,8 @@ public class ProjectService {
             String scenario,
             String keyRisks,
             String keyNeeds,
-            Map<String, Object> customFields
+            Map<String, Object> customFields,
+            List<com.presales.pipeline.solution.SolutionSelection> solutions
     ) {
     }
 }

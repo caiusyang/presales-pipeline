@@ -25,6 +25,13 @@ public record ProjectResponse(
         BigDecimal revenueTotal,
         boolean deleted,
         LocalDateTime createdAt,
-        LocalDateTime updatedAt
+        LocalDateTime updatedAt,
+        LocalDateTime lastFollowUpAt,
+        java.time.LocalDate nextActionDate,
+        String nextActionNote,
+        String securityDirection,
+        List<com.presales.pipeline.solution.SolutionSelection> solutions,
+        String hcsOpportunityId,String hcsStatus,LocalDateTime lastSyncAt,
+        List<Long> responsibleIds,List<com.presales.pipeline.project.Project.Responsible> responsibles
 ) {
 }

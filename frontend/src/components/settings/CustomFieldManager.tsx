@@ -54,6 +54,7 @@ interface FormState {
   optionSource: 'manual' | 'dictionary'
   dictionaryType: string | null
   sortOrder: string
+  applicableTracks: string[]
 }
 
 const EMPTY_FORM: FormState = {
@@ -65,6 +66,7 @@ const EMPTY_FORM: FormState = {
   optionSource: 'manual',
   dictionaryType: null,
   sortOrder: '10',
+  applicableTracks: [],
 }
 
 type DialogState = { mode: 'create' } | { mode: 'edit'; def: CustomFieldDef } | null
@@ -93,6 +95,7 @@ export function CustomFieldManager() {
         optionSource: def.dictionaryType ? 'dictionary' : 'manual',
         dictionaryType: def.dictionaryType ?? null,
         sortOrder: String(def.sortOrder),
+        applicableTracks: def.applicableTracks ?? [],
       })
     } else {
       const maxOrder = Math.max(0, ...(data ?? []).map((d) => d.sortOrder))
@@ -144,6 +147,7 @@ export function CustomFieldManager() {
           options,
           dictionaryType,
           sortOrder,
+          applicableTracks: form.applicableTracks,
         },
         { onSuccess: () => setDialog(null) },
       )
@@ -159,6 +163,7 @@ export function CustomFieldManager() {
             options,
             dictionaryType,
             sortOrder,
+            applicableTracks: form.applicableTracks,
           },
         },
         { onSuccess: () => setDialog(null) },
@@ -195,6 +200,7 @@ export function CustomFieldManager() {
               <TableHead>fieldKey</TableHead>
               <TableHead>类型</TableHead>
               <TableHead>必填</TableHead>
+              <TableHead>适用赛道</TableHead>
               <TableHead>选项来源 / 候选项</TableHead>
               <TableHead>排序</TableHead>
               <TableHead className="w-32">操作</TableHead>
@@ -213,6 +219,7 @@ export function CustomFieldManager() {
                       <Badge variant={meta?.variant ?? 'secondary'}>{meta?.label ?? d.fieldType}</Badge>
                     </TableCell>
                     <TableCell>{d.required ? '是' : '否'}</TableCell>
+                    <TableCell>{d.applicableTracks?.length ? d.applicableTracks.join('、') : '公共字段'}</TableCell>
                     <TableCell className="max-w-64 text-muted-foreground">
                       {d.fieldType === 'option' ? <>
                         <p className="truncate text-xs">{d.dictionaryType
@@ -332,6 +339,10 @@ export function CustomFieldManager() {
               />
               <span>必填</span>
             </label>
+            <fieldset className="space-y-2"><legend>适用赛道</legend>
+              <p className="text-xs text-muted-foreground">不勾选时为公共字段。切换赛道不删除已有值，专有必填校验仅在对应赛道生效。</p>
+              <div className="flex gap-4">{['HCS', '公有云'].map((track) => <label key={track} className="flex items-center gap-2"><Checkbox checked={form.applicableTracks.includes(track)} onCheckedChange={(checked) => setForm({ ...form, applicableTracks: checked ? [...form.applicableTracks, track] : form.applicableTracks.filter((v) => v !== track) })} />{track}</label>)}</div>
+            </fieldset>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialog(null)}>

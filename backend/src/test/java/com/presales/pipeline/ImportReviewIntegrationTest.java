@@ -89,7 +89,7 @@ class ImportReviewIntegrationTest {
 
     @Test
     void invalidDictionaryValuesAreReportedTogetherWithoutExpandingDictionary() throws Exception {
-        for (String type : new String[]{"industry", "track", "solution"}) {
+        for (String type : new String[]{"industry", "solution"}) {
             mvc.perform(post("/api/dictionaries").with(csrf()).contentType(MediaType.APPLICATION_JSON).content(
                     "{\"type\":\"" + type + "\",\"value\":\"标准值\",\"parentId\":null,\"sortOrder\":0}"))
                     .andExpect(status().isOk());

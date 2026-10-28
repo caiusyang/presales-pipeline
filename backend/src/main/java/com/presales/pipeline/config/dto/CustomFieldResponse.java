@@ -13,10 +13,12 @@ public record CustomFieldResponse(
         int sortOrder,
         LocalDateTime createdAt,
         LocalDateTime updatedAt,
-        String dictionaryType
+        String dictionaryType,
+        List<String> applicableTracks
 ) {
+    public CustomFieldResponse(Long id,String fieldKey,String label,String fieldType,boolean required,List<String> options,int sortOrder,LocalDateTime createdAt,LocalDateTime updatedAt,String dictionaryType){this(id,fieldKey,label,fieldType,required,options,sortOrder,createdAt,updatedAt,dictionaryType,List.of());}
     public CustomFieldResponse(Long id, String fieldKey, String label, String fieldType, boolean required, List<String> options,
                                int sortOrder, LocalDateTime createdAt, LocalDateTime updatedAt) {
-        this(id, fieldKey, label, fieldType, required, options, sortOrder, createdAt, updatedAt, null);
+        this(id, fieldKey, label, fieldType, required, options, sortOrder, createdAt, updatedAt, null,List.of());
     }
 }

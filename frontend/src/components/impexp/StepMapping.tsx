@@ -10,7 +10,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { isValidMonth } from '@/lib/format'
 import { PROJECT_FIELD_DEFS } from '@/lib/fields'
-import { PRODUCT_CATALOG } from '@/lib/products'
+import { PRODUCT_CATALOG, productName } from '@/lib/products'
 import { useCustomFieldDefs, useImportMappings, useMappingMutations } from '@/hooks/queries'
 import type { ID, ImportMapping } from '@/types'
 import type { ParsedSheet } from './excel'
@@ -28,6 +28,7 @@ import { ValueRulesEditor } from './ValueRulesEditor'
 import { SaveNameDialog } from './SaveNameDialog'
 
 interface Props {
+  sourceTrack?: string
   parsed: ParsedSheet
   targets: ColumnTarget[]
   onTargetsChange: (t: ColumnTarget[]) => void
@@ -51,6 +52,7 @@ export function StepMapping({
   onRuleDraftsChange,
   mappingId,
   mappingName,
+  sourceTrack,
   onApplyMapping,
   onMappingSaved,
   onClearMapping,
@@ -122,7 +124,7 @@ export function StepMapping({
     }
     setSaving(true)
     try {
-      const input = { name, columnMap: buildColumnMap(parsed.headers, targets), valueRules: draftsToRules(ruleDrafts) }
+      const input = { name, columnMap: buildColumnMap(parsed.headers, targets), valueRules: draftsToRules(ruleDrafts), applicableTrack: sourceTrack || null }
       if (mappingId != null) {
         await mutations.update.mutateAsync({ id: mappingId, input })
         onMappingSaved(mappingId, name)
@@ -164,7 +166,7 @@ export function StepMapping({
               className="w-64"
               value={mappingId != null ? String(mappingId) : ''}
               onValueChange={handleSelectMapping}
-              options={(mappings.data ?? []).map((m) => ({ value: String(m.id), label: m.name }))}
+              options={(mappings.data ?? []).filter((m) => !sourceTrack || !m.applicableTrack || m.applicableTrack === sourceTrack).map((m) => ({ value: String(m.id), label: `${m.name}（${m.applicableTrack ?? '公共'}）` }))}
               placeholder="选择已存方案"
               clearable
               clearLabel="不载入方案"
@@ -247,7 +249,7 @@ export function StepMapping({
                               className="w-32"
                               value={t.product ?? ''}
                               onValueChange={(product) => setTarget(i, { ...t, product: product as ColumnTarget['product'] })}
-                              options={PRODUCT_CATALOG.map((product) => ({ value: product, label: product }))}
+                              options={PRODUCT_CATALOG.map((product) => ({ value: product, label: productName(product) }))}
                               placeholder="选择产品"
                             />
                           )}
@@ -299,7 +301,7 @@ export function StepMapping({
                         {invalidProduct && <div className="mt-1 text-xs text-destructive">请选择具体产品</div>}
                         {dup && (
                           <div className="mt-1 flex items-center gap-1 text-xs text-amber-600">
-                            <AlertTriangle className="h-3 w-3" /> 该目标字段被多列选中，后列会覆盖前列
+                            <AlertTriangle className="h-3 w-3" /> 多列映射到同一字段；值不一致时进入待修正，不会静默覆盖
                           </div>
                         )}
                       </TableCell>

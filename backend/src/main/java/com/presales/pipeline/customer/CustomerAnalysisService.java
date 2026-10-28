@@ -26,8 +26,10 @@ public class CustomerAnalysisService {
 
     private final ProjectRepository projectRepository;
     private final RevenueRepository revenueRepository;
+    private final ProductCatalog productCatalog;
 
-    public CustomerAnalysisService(ProjectRepository projectRepository, RevenueRepository revenueRepository) {
+    public CustomerAnalysisService(ProjectRepository projectRepository, RevenueRepository revenueRepository,ProductCatalog productCatalog) {
+        this.productCatalog=productCatalog;
         this.projectRepository = projectRepository;
         this.revenueRepository = revenueRepository;
     }
@@ -46,7 +48,7 @@ public class CustomerAnalysisService {
         }
 
         return customers.values().stream()
-                .map(CustomerAccumulator::toResponse)
+                .map(item->item.toResponse(productCatalog.codes()))
                 .filter(customer -> matches(customer, normalizedKeyword))
                 .sorted(Comparator.comparing(CustomerAnalysisResponse::revenueTotal).reversed()
                         .thenComparing(CustomerAnalysisResponse::customerName))
@@ -59,9 +61,7 @@ public class CustomerAnalysisService {
             return Map.of();
         }
         Map<Long, BigDecimal> totals = new HashMap<>();
-        for (Revenue revenue : revenueRepository.findAllByProjectIdInAndDeletedFalse(projectIds)) {
-            totals.merge(revenue.getProject().getId(), revenue.getAmount(), BigDecimal::add);
-        }
+        for (var revenue : revenueRepository.totals(projectIds,null,null)) totals.put(revenue.getProjectId(),revenue.getAmount());
         return totals;
     }
 
@@ -103,11 +103,11 @@ public class CustomerAnalysisService {
             projects.add(new CustomerProjectResponse(
                     project.getId(), project.getExternalId(), project.getProjectName(), project.getProjectStatus(),
                     project.getIndustry(), project.getTrack(), project.getSolution(), project.getSubSolution(),
-                    project.getPurchasedProducts(), projectRevenue, project.getUpdatedAt()));
+                    project.getPurchasedProducts(), projectRevenue, project.getUpdatedAt(),project.getSolutions()));
         }
 
-        private CustomerAnalysisResponse toResponse() {
-            List<String> orderedProducts = ProductCatalog.CODES.stream().filter(products::contains).toList();
+        private CustomerAnalysisResponse toResponse(List<String> codes) {
+            List<String> orderedProducts = codes.stream().filter(products::contains).toList();
             List<CustomerProjectResponse> orderedProjects = projects.stream()
                     .sorted(Comparator.comparing(CustomerProjectResponse::updatedAt).reversed())
                     .toList();

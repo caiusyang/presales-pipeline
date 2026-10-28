@@ -12,8 +12,10 @@ public class ProjectDataInitializer implements ApplicationRunner {
 
     private final ProjectRepository repository;
     private final ProjectProductService projectProductService;
+    private final com.presales.pipeline.product.ProjectProductRepository products;
 
-    public ProjectDataInitializer(ProjectRepository repository, ProjectProductService projectProductService) {
+    public ProjectDataInitializer(ProjectRepository repository, ProjectProductService projectProductService,com.presales.pipeline.product.ProjectProductRepository products) {
+        this.products=products;
         this.repository = repository;
         this.projectProductService = projectProductService;
     }
@@ -21,9 +23,10 @@ public class ProjectDataInitializer implements ApplicationRunner {
     @Override
     @Transactional
     public void run(ApplicationArguments args) {
-        repository.findAll().forEach(project -> {
+        var owned=products.findAll().stream().collect(java.util.stream.Collectors.groupingBy(p->p.getProject().getId(),java.util.stream.Collectors.mapping(com.presales.pipeline.product.ProjectProduct::getProductCode,java.util.stream.Collectors.toSet())));
+        try(var scope=com.presales.pipeline.importing.ImportReferenceScope.open()){repository.findAll().forEach(project -> {
             project.initializeLegacyDefaults();
-            projectProductService.sync(project, project.getPurchasedProducts());
-        });
+            if(!new java.util.HashSet<>(project.getPurchasedProducts()).equals(owned.getOrDefault(project.getId(),java.util.Set.of())))projectProductService.sync(project, project.getPurchasedProducts());
+        });}
     }
 }
