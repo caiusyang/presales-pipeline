@@ -14,7 +14,7 @@ import java.security.MessageDigest;
 public class JobStore {
     final BatchJobRepository jobs; final BatchJobItemRepository items; final ObjectMapper mapper; private final TaskHistoryService history;
     public JobStore(BatchJobRepository jobs,BatchJobItemRepository items,ObjectMapper mapper,TaskHistoryService history) {this.jobs=jobs;this.items=items;this.mapper=mapper;this.history=history;}
-    public static LocalDateTime now(){return LocalDateTime.now(ZoneId.of("Asia/Shanghai"));}
+    public static LocalDateTime now(){return com.presales.pipeline.common.config.BusinessTime.now();}
     public String json(Object value){try{return mapper.writeValueAsString(value);}catch(Exception e){throw BusinessException.badRequest("任务数据无法序列化");}}
     public <T>T read(String value,Class<T> type){try{return mapper.readValue(value,type);}catch(Exception e){throw BusinessException.badRequest("任务数据格式不正确");}}
     @Transactional public synchronized BatchJob submit(String requestKey,String kind,Object payload,String operator){

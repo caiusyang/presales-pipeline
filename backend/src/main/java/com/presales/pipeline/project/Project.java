@@ -48,7 +48,7 @@ public class Project extends SoftDeletableEntity {
     @Column(name="next_action_date") private java.time.LocalDate nextActionDate;
     @Column(name="next_action_note",columnDefinition="text") private String nextActionNote;
     public java.time.LocalDateTime getLastFollowUpAt(){return lastFollowUpAt;}
-    public void touchFollowUp(){lastFollowUpAt=java.time.LocalDateTime.now(com.presales.pipeline.common.config.BusinessTime.ZONE);}
+    public void touchFollowUp(){lastFollowUpAt=com.presales.pipeline.common.config.BusinessTime.now();}
     public java.time.LocalDate getNextActionDate(){return nextActionDate;}
     public void setNextActionDate(java.time.LocalDate value){nextActionDate=value;}
     public String getNextActionNote(){return nextActionNote;}

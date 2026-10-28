@@ -15,7 +15,8 @@ export function validateBackup(backup) {
   const fk = (table, field, target, nullable = false) => {
     for (const row of tables[table]) if (!(nullable && row[field] == null) && !sets[target]?.has(String(row[field]))) errors.push(`${table}#${row.id} 的 ${field} 无有效 ${target} 引用`)
   }
-  for (const table of ['revenues', 'progress_logs', 'project_products', 'change_logs', 'project_solutions', 'project_responsibles', 'migration_issues']) fk(table, 'projectId', 'projects')
+  for (const table of ['revenues', 'progress_logs', 'project_products', 'change_logs', 'project_solutions', 'project_responsibles']) fk(table, 'projectId', 'projects')
+  fk('migration_issues', 'projectId', 'projects', true)
   fk('project_solutions', 'solutionId', 'dictionaries'); fk('project_solutions', 'subSolutionId', 'dictionaries', true)
   fk('project_responsibles', 'personId', 'responsible_people'); fk('batch_job_items', 'jobId', 'batch_jobs')
   const codes = new Set(tables.product_catalog.map((r) => r.code)), dictionaries = new Map(tables.dictionaries.map((r) => [String(r.id), r]))

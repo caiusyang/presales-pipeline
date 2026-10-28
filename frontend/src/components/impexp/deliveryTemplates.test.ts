@@ -7,7 +7,7 @@ import { buildColumnMap, buildImportRecords, PRODUCT_SENTINEL } from './importTr
 describe('交付模板端到端解析和语义映射', () => {
   for (const name of ['公有云导入模板', 'HCS本地项目模板']) it(`${name}预算零值、方案父子JSON、日期和需求含义不丢失`, async () => {
     const buffer=await readFile(new URL(`../../../../docs/deliverables/${name}.xlsx`,import.meta.url))
-    const parsed=await parseExcelFile(new File([buffer],`${name}.xlsx`))
+    const parsed=await parseExcelFile(new File([new Uint8Array(buffer)],`${name}.xlsx`))
     const targets=autoMapColumns(parsed.headers,parsed.rows,[]), columnMap=buildColumnMap(parsed.headers,targets)
     expect(columnMap['本地售前状态']).toBe('projectStatus');expect(columnMap['方案集合（JSON）']).toBe('solutions')
     expect(targets[parsed.headers.indexOf('已购产品/WAF')]).toMatchObject({target:PRODUCT_SENTINEL,product:'WAF'})

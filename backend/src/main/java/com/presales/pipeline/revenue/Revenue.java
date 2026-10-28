@@ -19,7 +19,8 @@ public class Revenue extends SoftDeletableEntity {
     @JoinColumn(name = "project_id", nullable = false)
     private Project project;
 
-    @Column(name = "revenue_month", nullable = false, length = 7)
+    @org.hibernate.annotations.JdbcTypeCode(org.hibernate.type.SqlTypes.CHAR)
+    @Column(name = "revenue_month", nullable = false, length = 7, columnDefinition = "char(7)")
     private String month;
 
     @Column(nullable = false, precision = 18, scale = 2)
