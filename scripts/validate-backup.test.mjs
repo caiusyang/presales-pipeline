@@ -9,3 +9,16 @@ test('恢复预检核对新增关联、产品、任务以及收入，识别孤�
   backup.tables.project_solutions[0].projectId=99; backup.tables.batch_job_items[0].resultData='broken'
   const report=validateBackup(backup); assert.equal(report.valid,false); assert.ok(report.errors.some((s)=>s.includes('引用'))); assert.ok(report.errors.some((s)=>s.includes('有效 JSON')))
 })
+test('跟进规则与项目级别校验；旧备份可预检但明确提示补规则', () => {
+  const backup = { tables: Object.fromEntries(names.map((name) => [name, []])) }
+  assert.equal(validateBackup(backup).valid, true)
+  assert.equal(validateBackup(backup).warnings.length, 1)
+  backup.tables.follow_up_policies = [{ id:1, fixedTargetDays:7, normalDays:14 }]
+  backup.tables.projects = [{ id:1, fixedTarget:true, projectLevel:'高风险' }]
+  assert.equal(validateBackup(backup).valid, true)
+  assert.equal(validateBackup(backup).warnings.length, 0)
+  backup.tables.follow_up_policies[0].normalDays = 0
+  backup.tables.projects[0].fixedTarget = '是'
+  backup.tables.projects[0].projectLevel = '重点'
+  assert.equal(validateBackup(backup).errors.length, 3)
+})

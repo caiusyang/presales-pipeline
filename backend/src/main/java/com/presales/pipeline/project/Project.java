@@ -18,6 +18,12 @@ import java.util.Map;
 public class Project extends SoftDeletableEntity {
     @jakarta.persistence.Version @Column(name="row_version",nullable=false,columnDefinition="bigint default 0") private long rowVersion;
     public long getRowVersion(){return rowVersion;}
+    @Column(name="fixed_target",nullable=false,columnDefinition="boolean default false") private boolean fixedTarget;
+    @Column(name="project_level",length=16) private String projectLevel;
+    public boolean isFixedTarget(){return fixedTarget;}
+    public void setFixedTarget(boolean value){fixedTarget=value;}
+    public String getProjectLevel(){return projectLevel;}
+    public void setProjectLevel(String value){projectLevel=value;}
     @Column(name="hcs_opportunity_id",unique=true,length=128) private String hcsOpportunityId;
     @Column(name="hcs_status") private String hcsStatus;
     @Column(name="last_sync_at") private java.time.LocalDateTime lastSyncAt;

@@ -40,6 +40,8 @@ public class ImportValidator {
     public List<ImportIssue> validate(Map<String, Object> fields, ImportRecordRequest record,
                                       List<ImportFieldDefinition> pending) {
         List<ImportIssue> issues = new ArrayList<>();
+        if(fields.containsKey("fixedTarget"))try{fields.put("fixedTarget",parseFixedTarget(fields.get("fixedTarget")));}catch(RuntimeException error){add(issues,"fixedTarget","format",error.getMessage());}
+        if(fields.containsKey("projectLevel")){String level=text(fields.get("projectLevel"));if(!level.isEmpty()&&!List.of("无风险","低风险","高风险").contains(level))add(issues,"projectLevel","option","项目级别只能为无风险、低风险、高风险");else fields.put("projectLevel",level);}
         List<com.presales.pipeline.solution.SolutionSelection> selections=null;
         if(fields.containsKey("solutions"))try{
             var raw=fields.get("solutions");if(!(raw instanceof List<?>))throw BusinessException.badRequest("方案集合必须是数组");
@@ -149,6 +151,11 @@ public class ImportValidator {
 
     public Set<String> existingKeys() {
         Set<String> keys = new HashSet<>(); config.listCustomFields().forEach(def -> keys.add(def.fieldKey())); return keys;
+    }
+    public static boolean parseFixedTarget(Object value){
+        if(value instanceof Boolean flag)return flag;
+        String text=value==null?"":String.valueOf(value).trim().toLowerCase(Locale.ROOT);
+        return switch(text){case "是","true","1","yes","y"->true;case "","否","false","0","no","n"->false;default->throw BusinessException.badRequest("是否固定靶须为是/否、true/false或1/0，不能按非空判断");};
     }
 
     public static List<String> products(Object raw) {

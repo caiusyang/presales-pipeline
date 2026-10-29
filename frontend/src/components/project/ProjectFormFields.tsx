@@ -10,6 +10,7 @@ import { PROJECT_STATUSES, type CustomFieldDef, type DictNode, type ProjectInput
 import { selectableProducts } from '@/lib/products'
 import { solutionSelections, withSolutions } from '@/lib/solutions'
 import { SolutionSelector } from './SolutionSelector'
+import { PROJECT_LEVELS } from '@/lib/followUp'
 
 interface Props {
   value: ProjectInput
@@ -55,6 +56,8 @@ export function ProjectFormFields({ value, onChange }: Props) {
   }
 
   const renderBaseControl = (def: ProjectFieldDef) => {
+    if (def.key === 'fixedTarget') return <Select aria-label="是否固定靶" value={String(value.fixedTarget ?? false)} onValueChange={(v) => onChange({ ...value, fixedTarget: v === 'true' })} options={[{ value: 'true', label: '是（固定靶）' }, { value: 'false', label: '否（非固定靶）' }]} />
+    if (def.key === 'projectLevel') return <Select aria-label="项目级别" value={value.projectLevel ?? ''} onValueChange={(v) => onChange({ ...value, projectLevel: v as ProjectInput['projectLevel'] })} options={PROJECT_LEVELS.map((v) => ({ value: v, label: v }))} clearable clearLabel="未设置" placeholder="未设置" />
     const raw = value[def.key as keyof ProjectInput]
     const v = raw == null ? '' : String(raw)
     if (def.kind === 'textarea') {

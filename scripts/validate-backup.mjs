@@ -3,9 +3,14 @@ import { pathToFileURL } from 'node:url'
 
 /** Read-only restore preflight. Never connects to or changes a database. */
 export function validateBackup(backup) {
-  const errors = [], tables = { ...(backup?.tables ?? {}) }
+  const errors = [], warnings = [], tables = { ...(backup?.tables ?? {}) }
   const required = ['projects', 'revenues', 'progress_logs', 'project_products', 'dictionaries', 'dictionary_categories', 'custom_field_definitions', 'import_mappings', 'export_templates', 'change_logs', 'product_catalog', 'project_solutions', 'responsible_people', 'project_responsibles', 'batch_jobs', 'batch_job_items', 'purged_project_snapshots', 'migration_issues']
   const sets = {}
+  if (tables.follow_up_policies == null) warnings.push('旧备份未包含跟进规则，恢复时需补充固定靶 7 天、非固定靶 14 天的默认规则；不得重置项目跟进时间。')
+  else {
+    if (!Array.isArray(tables.follow_up_policies) || tables.follow_up_policies.length !== 1 || !tables.follow_up_policies[0] || tables.follow_up_policies[0].id !== 1 || !['fixedTargetDays', 'normalDays'].every((key) => Number.isInteger(tables.follow_up_policies[0][key]) && tables.follow_up_policies[0][key] >= 1 && tables.follow_up_policies[0][key] <= 3650)) errors.push('跟进规则必须有唯一 id=1，且周期为 1—3650 天的整数')
+    if (Array.isArray(tables.follow_up_policies)) required.push('follow_up_policies')
+  }
   for (const name of required) {
     if (!Array.isArray(tables[name])) { errors.push(`缺少表或不是数组：${name}`); tables[name] = []; continue }
     const ids = tables[name].map((r) => String(name === 'purged_project_snapshots' ? r.projectId : r.id))
@@ -27,9 +32,13 @@ export function validateBackup(backup) {
   }
   for (const row of tables.purged_project_snapshots) if (sets.projects?.has(String(row.projectId))) errors.push(`永久删除标记与现存项目冲突：${row.projectId}`)
   for (const row of tables.revenues) if (!Number.isFinite(Number(row.amount)) || !/^\d{4}-(0[1-9]|1[0-2])$/.test(row.month)) errors.push(`revenues#${row.id} 金额或月份无效`)
+  for (const row of tables.projects) {
+    if (row.fixedTarget != null && typeof row.fixedTarget !== 'boolean') errors.push(`projects#${row.id} 是否固定靶必须为布尔值`)
+    if (row.projectLevel && !['无风险', '低风险', '高风险'].includes(row.projectLevel)) errors.push(`projects#${row.id} 项目级别无效`)
+  }
   for (const [table, fields] of [['batch_jobs', ['payload']], ['batch_job_items', ['inputData', 'resultData']]]) for (const row of tables[table]) for (const field of fields) if (row[field] != null) try { JSON.parse(row[field]) } catch { errors.push(`${table}#${row.id} ${field} 不是有效 JSON`) }
   const incomeCents = tables.revenues.filter((r) => !r.deleted).reduce((n, r) => n + Math.round(Number(r.amount) * 100), 0)
-  return { valid: errors.length === 0, errors, counts: Object.fromEntries(required.map((name) => [name, tables[name].length])), activeRevenueTotal: (incomeCents / 100).toFixed(2), note: '只做备份结构与引用校验，不执行恢复；仍须在隔离 MySQL 恢复并核对记录数、方案、产品及收入。' }
+  return { valid: errors.length === 0, errors, warnings, counts: Object.fromEntries(required.map((name) => [name, tables[name].length])), activeRevenueTotal: (incomeCents / 100).toFixed(2), note: '只做备份结构与引用校验，不执行恢复；仍须在隔离 MySQL 恢复并核对记录数、方案、产品及收入。' }
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   if (!process.argv[2]) throw new Error('用法：node scripts/validate-backup.mjs /绝对路径/backup.json')

@@ -41,6 +41,7 @@ import { parseProgressCell } from '@/lib/progressDate'
 import type { ProgressRepairInput, ProgressRepairRow } from '@/api/types'
 import { normalizeSolutions, solutionSelections, withSolutions } from '@/lib/solutions'
 import { matchPeople, type PersonInput } from '@/lib/people'
+import { DEFAULT_FOLLOW_UP_POLICY, followUpReminder, PROJECT_LEVELS } from '@/lib/followUp'
 
 // ============================================================
 // Mock 实现：在浏览器内模拟后端契约（判重 / dryRun / 修改日志 /
@@ -72,7 +73,12 @@ function productCodeFromExportKey(key: string): string | null {
 let db: MockDB = load()
 db.productCatalog ??= initialProducts()
 setProductCatalog(db.productCatalog)
-for (const project of db.projects) project.solutions ??= solutionSelections(project)
+for (const project of db.projects) {
+  project.solutions ??= solutionSelections(project)
+  project.fixedTarget ??= false
+  project.projectLevel ??= null
+}
+db.followUpPolicy ??= { ...DEFAULT_FOLLOW_UP_POLICY }
 db.people ??= []
 let bulkExecutionCount = 0
 
@@ -223,7 +229,7 @@ function diffAndLog(projectId: ID, before: Project, after: ProjectInput, source:
     'externalId', 'customerName', 'projectName', 'projectStatus', 'securityBudget', 'solution', 'subSolution',
     'purchasedProducts', 'track',
     'industry', 'subIndustry', 'scenario', 'keyRisks', 'keyNeeds', 'nextActionDate', 'nextActionNote', 'securityDirection',
-    'responsibleIds', 'hcsOpportunityId',
+    'responsibleIds', 'hcsOpportunityId', 'fixedTarget', 'projectLevel',
   ]
   for (const f of fields) {
     const ov = norm(before[f])
@@ -244,6 +250,8 @@ function diffAndLog(projectId: ID, before: Project, after: ProjectInput, source:
 }
 
 function validateProjectFields(fields: Partial<ProjectInput>, previous?: Project) {
+  if (fields.fixedTarget != null && typeof fields.fixedTarget !== 'boolean') throw new Error('是否固定靶必须选择是或否')
+  if (fields.projectLevel && !PROJECT_LEVELS.includes(fields.projectLevel)) throw new Error('项目级别只能为无风险、低风险或高风险')
   if (fields.track && !['HCS', '公有云'].includes(fields.track)) throw new Error('赛道固定为 HCS、公有云；安全方向须单独填写')
   if (fields.nextActionDate && (!DATE_RE.test(fields.nextActionDate) || parseProgressCell(`${fields.nextActionDate}：日期校验`).issues.length)) throw new Error('下次行动日期无效')
   for (const f of REQUIRED_PROJECT_FIELDS) {
@@ -344,6 +352,11 @@ function dictUsageCount(item: DictNode): number {
 }
 
 export const mockApi: ApiClient = {
+  getFollowUpPolicy: () => delay(() => ({ ...db.followUpPolicy! })),
+  saveFollowUpPolicy: (input) => delay(() => {
+    if (![input.fixedTargetDays, input.normalDays].every((n) => Number.isInteger(n) && n >= 1 && n <= 3650)) throw new Error('跟进周期必须是 1—3650 天的整数')
+    db.followUpPolicy = { ...input }; persist(); return { ...input }
+  }),
   listPeople: () => delay(() => structuredClone(db.people ?? [])),
   savePerson,
   matchPeople: (input) => delay(() => matchPeople(db.people ?? [], input)),
@@ -384,6 +397,15 @@ export const mockApi: ApiClient = {
       if (q.industry) list = list.filter((p) => p.industry === q.industry)
       if (q.track) list = list.filter((p) => q.track === '__unclassified__' ? !p.track : p.track === q.track)
       if (q.projectStatus) list = list.filter((p) => p.projectStatus === q.projectStatus)
+      if (q.fixedTarget != null) list = list.filter((p) => p.fixedTarget === q.fixedTarget)
+      if (q.projectLevel) {
+        if (!PROJECT_LEVELS.includes(q.projectLevel as typeof PROJECT_LEVELS[number])) throw new Error('项目级别无效')
+        list = list.filter((p) => p.projectLevel === q.projectLevel)
+      }
+      if (q.followUpRange) {
+        if (q.followUpRange !== 'due') throw new Error('跟进提醒筛选范围无效')
+        list = list.filter((p) => followUpReminder(p, db.followUpPolicy!).due)
+      }
       if (q.hcsStatus) list = list.filter((p) => p.hcsStatus === q.hcsStatus)
       if (q.responsibleId) list = list.filter((p) => p.responsibles?.some((r) => r.personId === q.responsibleId))
       if (q.solution || q.subSolution) list = list.filter((p) => solutionSelections(p).some((s) => (!q.solution || s.solution === q.solution) && (!q.subSolution || s.subSolutions.includes(q.subSolution))))
@@ -452,7 +474,7 @@ export const mockApi: ApiClient = {
   createProject(input) {
     return delay(() => {
       validateProjectFields(input)
-      const normalized = withSolutions(input, normalizeSolutions(solutionSelections(input)))
+      const normalized = withSolutions({ ...input, fixedTarget: input.fixedTarget ?? false, projectLevel: input.projectLevel || null }, normalizeSolutions(solutionSelections(input)))
       const issues = validateImportRecord({ fields: normalized, revenues: [], progress: [] }, db.dictionaries, effectiveCustomFieldDefs())
       if (issues.length) throw new Error(issues[0].message)
       const p: Project = {
@@ -472,7 +494,7 @@ export const mockApi: ApiClient = {
       if (idx < 0) throw new Error('项目不存在')
       const before = db.projects[idx]
       validateProjectFields(input, before)
-      const normalizedInput = withSolutions({ ...input, ...projectPeople(input, before), purchasedProducts: input.purchasedProducts.map((p) => normalizeProductCode(p)!), securityBudget: normalizeSecurityBudgetValue(input.securityBudget) }, normalizeSolutions(solutionSelections(input)))
+      const normalizedInput = withSolutions({ ...input, fixedTarget: input.fixedTarget ?? before.fixedTarget ?? false, projectLevel: input.projectLevel == null ? before.projectLevel : input.projectLevel || null, ...projectPeople(input, before), purchasedProducts: input.purchasedProducts.map((p) => normalizeProductCode(p)!), securityBudget: normalizeSecurityBudgetValue(input.securityBudget) }, normalizeSolutions(solutionSelections(input)))
       const issues = validateImportRecord({ fields: normalizedInput, revenues: [], progress: [] }, db.dictionaries, effectiveCustomFieldDefs(), [], before)
       if (issues.length) throw new Error(issues[0].message)
       diffAndLog(id, before, normalizedInput, 'manual')
@@ -1180,6 +1202,7 @@ export const mockApi: ApiClient = {
             }
             if (column.key === 'progressSummary') return [column.key, progressSummary]
             if (column.key === 'solutions') return [column.key, JSON.stringify(solutionSelections(project))]
+            if (column.key === 'fixedTarget') return [column.key, project.fixedTarget ? '是' : '否']
             if (column.key === 'responsibles') return [column.key, project.responsibles?.map((r) => `${r.name}（${r.source}${r.role ? ` / ${r.role}` : ''}）`).join('、') ?? '']
             if (column.key.startsWith('custom.')) {
               return [column.key, project.customFields?.[column.key.slice('custom.'.length)] ?? null]
@@ -1204,6 +1227,7 @@ export const mockApi: ApiClient = {
                 const productCode = productCodeFromExportKey(c.key)
                 if (productCode) return [c.key, p.purchasedProducts.includes(productCode) ? '已购' : '']
                 if (c.key === 'solutions') return [c.key, JSON.stringify(solutionSelections(p))]
+                if (c.key === 'fixedTarget') return [c.key, p.fixedTarget ? '是' : '否']
                 if (c.key === 'responsibles') return [c.key, p.responsibles?.map((r) => `${r.name}（${r.source}）`).join('、') ?? '']
                 if (c.key === 'revenueTotal') return [c.key, revenueTotalOf(p.id, f.startMonth, f.endMonth)]
                 if (c.key.startsWith('custom.')) return [c.key, p.customFields?.[c.key.slice(7)] ?? null]

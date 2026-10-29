@@ -8,8 +8,11 @@ import { ProgressRepairManager } from '@/components/settings/ProgressRepairManag
 import { ProductCatalogManager } from '@/components/settings/ProductCatalogManager'
 import { MigrationIssues } from '@/components/settings/MigrationIssues'
 import { PeopleManager } from '@/components/settings/PeopleManager'
+import { FollowUpPolicyManager } from '@/components/settings/FollowUpPolicyManager'
+import { useSearchParams } from 'react-router-dom'
 
 export default function SettingsPage() {
+  const [params] = useSearchParams()
   return (
     <div className="mx-auto max-w-5xl space-y-4 p-6">
       <header>
@@ -18,9 +21,10 @@ export default function SettingsPage() {
           字典、导入映射、导出模板、自定义字段与数据备份，全部界面自助维护，无需改代码。
         </p>
       </header>
-      <Tabs defaultValue="dict">
+      <Tabs defaultValue={params.get('tab') === 'follow-up' ? 'follow-up' : 'dict'}>
         <TabsList className="h-auto flex-wrap">
           <TabsTrigger value="dict">字典管理</TabsTrigger>
+          <TabsTrigger value="follow-up">跟进提醒</TabsTrigger>
           <TabsTrigger value="mapping">导入映射</TabsTrigger>
           <TabsTrigger value="template">导出模板</TabsTrigger>
           <TabsTrigger value="fields">自定义字段</TabsTrigger>
@@ -34,6 +38,7 @@ export default function SettingsPage() {
         <TabsContent value="dict">
           <DictManager />
         </TabsContent>
+        <TabsContent value="follow-up"><FollowUpPolicyManager /></TabsContent>
         <TabsContent value="mapping">
           <MappingManager />
         </TabsContent>

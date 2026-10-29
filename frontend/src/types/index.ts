@@ -11,6 +11,8 @@ export interface SolutionSelection { solution: string; subSolutions: string[] }
 
 // ---------- 项目 ----------
 export interface Project {
+  fixedTarget?: boolean
+  projectLevel?: '无风险' | '低风险' | '高风险' | '' | null
   hcsOpportunityId?: string | null
   hcsStatus?: string | null
   lastSyncAt?: string | null

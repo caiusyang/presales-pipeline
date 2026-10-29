@@ -219,7 +219,9 @@ public class ImportRecordProcessor {
                 fields.string("securityDirection","security_direction"),
                 fields.contains("solutions","solutions")?mapper.convertValue(fields.raw("solutions","solutions"),new TypeReference<List<com.presales.pipeline.solution.SolutionSelection>>(){}):null,
                 fields.string("hcsOpportunityId","hcs_opportunity_id"),
-                fields.contains("responsibleIds","responsible_ids")?mapper.convertValue(fields.raw("responsibleIds","responsible_ids"),new TypeReference<List<Long>>(){}):null
+                fields.contains("responsibleIds","responsible_ids")?mapper.convertValue(fields.raw("responsibleIds","responsible_ids"),new TypeReference<List<Long>>(){}):null,
+                fields.contains("fixedTarget","fixed_target")?ImportValidator.parseFixedTarget(fields.raw("fixedTarget","fixed_target")):null,
+                fields.contains("projectLevel","project_level")?java.util.Objects.toString(fields.raw("projectLevel","project_level"),"").trim():null
         );
     }
 

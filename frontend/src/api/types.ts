@@ -28,6 +28,9 @@ import type { Person, PersonInput, PersonReference } from '@/lib/people'
 
 // ---------- 项目 ----------
 export interface ProjectListQuery {
+  followUpRange?: 'due'
+  fixedTarget?: boolean
+  projectLevel?: string
   solution?: string
   subSolution?: string
   responsibleId?: ID
@@ -275,6 +278,8 @@ export interface JobApi {
 }
 
 export interface ApiClient extends JobApi {
+  getFollowUpPolicy(): Promise<import('@/lib/followUp').FollowUpPolicy>
+  saveFollowUpPolicy(input: import('@/lib/followUp').FollowUpPolicy): Promise<import('@/lib/followUp').FollowUpPolicy>
   listPeople(): Promise<Person[]>
   savePerson(input: PersonInput, id?: ID): Promise<Person>
   matchPeople(input: PersonReference[]): Promise<{ personIds: ID[]; issues: string[] }>

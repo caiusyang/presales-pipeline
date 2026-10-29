@@ -13,6 +13,23 @@ public final class ProjectSpecifications {
 
     private ProjectSpecifications() {
     }
+    public static Specification<Project> followUp(String range,Boolean fixedTarget,String level,com.presales.pipeline.followup.FollowUpPolicyService.Policy policy){return(root,query,cb)->{
+        var predicates=new ArrayList<Predicate>();
+        if(fixedTarget!=null)predicates.add(cb.equal(root.get("fixedTarget"),fixedTarget));
+        if(level!=null&&!level.isBlank()){
+            if(!List.of("无风险","低风险","高风险").contains(level))throw com.presales.pipeline.common.exception.BusinessException.badRequest("项目级别筛选不正确");
+            predicates.add(cb.equal(root.get("projectLevel"),level));
+        }
+        if(range!=null&&!range.isBlank()){
+            if(!range.equals("due"))throw com.presales.pipeline.common.exception.BusinessException.badRequest("跟进提醒筛选不正确");
+            var today=java.time.LocalDate.now(com.presales.pipeline.common.config.BusinessTime.ZONE);
+            var last=cb.<java.time.LocalDateTime>coalesce(root.get("lastFollowUpAt"),root.get("createdAt"));
+            var fixed=cb.isTrue(root.get("fixedTarget"));
+            predicates.add(cb.isFalse(root.get("deleted")));predicates.add(cb.notEqual(root.get("projectStatus"),ProjectService.WON_STATUS));
+            predicates.add(cb.or(cb.and(fixed,cb.lessThan(last,today.minusDays(policy.fixedTargetDays()).plusDays(1).atStartOfDay())),cb.and(cb.not(fixed),cb.lessThan(last,today.minusDays(policy.normalDays()).plusDays(1).atStartOfDay()))));
+        }
+        return cb.and(predicates.toArray(Predicate[]::new));
+    };}
     public static Specification<Project> people(Long personId,String hcsStatus){return(root,query,cb)->{
         var predicates=new ArrayList<Predicate>();if(hcsStatus!=null&&!hcsStatus.isBlank())predicates.add(cb.equal(root.get("hcsStatus"),hcsStatus));
         if(personId!=null){var sub=query.subquery(Long.class);var person=sub.from(com.presales.pipeline.people.ProjectPerson.class);sub.select(person.get("id")).where(cb.equal(person.get("project").get("id"),root.get("id")),cb.equal(person.get("person").get("id"),personId));predicates.add(cb.exists(sub));}

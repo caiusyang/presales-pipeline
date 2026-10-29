@@ -32,6 +32,7 @@ public record ProjectResponse(
         String securityDirection,
         List<com.presales.pipeline.solution.SolutionSelection> solutions,
         String hcsOpportunityId,String hcsStatus,LocalDateTime lastSyncAt,
-        List<Long> responsibleIds,List<com.presales.pipeline.project.Project.Responsible> responsibles
+        List<Long> responsibleIds,List<com.presales.pipeline.project.Project.Responsible> responsibles,
+        boolean fixedTarget,String projectLevel
 ) {
 }

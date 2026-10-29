@@ -5,6 +5,7 @@ import { validateSecurityBudget } from '@/components/project/project-utils'
 import { isValidMonth } from '@/lib/format'
 import { parseProgressCell } from '@/lib/progressDate'
 import { normalizeProductCode, PRODUCT_CATALOG, type ProductCode } from '@/lib/products'
+import { parseFixedTarget, PROJECT_LEVELS } from '@/lib/followUp'
 
 // ============================================================
 // 导入组装纯函数：columnMap 抽取 → valueRules（split → exact → default）
@@ -369,12 +370,14 @@ export function buildImportRecords({ headers, rows, columnMap, valueRules, defau
       if (rule.type !== 'exact' || !rule.matchField) continue
       if (Object.entries(rule.when ?? {}).some(([key, value]) => String(fieldValue(key) ?? '').trim() !== value)) continue
       const raw = fieldValue(rule.matchField)
-      const value = Array.isArray(raw) ? raw.join('、') : String(raw ?? '').trim()
-      const hit = rule.mapping[value]
+      const value = typeof raw === 'boolean' ? raw ? '是' : '否' : Array.isArray(raw) ? raw.join('、') : String(raw ?? '').trim()
+      const hit = rule.mapping[value] ?? rule.mapping[String(raw ?? '').trim()]
       if (hit) for (const [key, replacement] of Object.entries(hit)) setField(key, replacement, true)
     }
 
     // 必填项由后端合并已有项目后校验；预算错误仍给出本地提示。
+    if (Object.hasOwn(fields, 'fixedTarget')) { const flag = parseFixedTarget(fields.fixedTarget); if (flag == null) problems.push({ excelRow, field: 'fixedTarget', message: '是否固定靶须为是/否、true/false或1/0，不能按非空判断' }); else fields.fixedTarget = flag }
+    if (fields.projectLevel && !PROJECT_LEVELS.includes(String(fields.projectLevel) as typeof PROJECT_LEVELS[number])) problems.push({ excelRow, field: 'projectLevel', message: '项目级别只能为无风险、低风险、高风险' })
     const budgetError = validateSecurityBudget(fields.securityBudget)
     if (budgetError) problems.push({ excelRow, field: 'securityBudget', message: budgetError })
     records.push({ sourceRow: excelRow, fields: fields as unknown as Partial<ProjectInput>, revenues, progress })

@@ -16,12 +16,14 @@ import type { MigrationIssue } from '@/api/types'
 import type { ProductDefinition } from '@/lib/products'
 import type { Person } from '@/lib/people'
 import { businessDate } from '@/lib/actions'
+import { DEFAULT_FOLLOW_UP_POLICY, type FollowUpPolicy } from '@/lib/followUp'
 
 // ============================================================
 // Mock 种子数据：字典 / 自定义字段 / 模板 / 项目及其收入、进展
 // ============================================================
 
 export interface MockDB {
+  followUpPolicy?: FollowUpPolicy
   people?: Person[]
   productCatalog?: ProductDefinition[]
   tasks?: TaskState
@@ -379,11 +381,13 @@ export function seedDB(): MockDB {
   return {
     seq,
     people,
+    followUpPolicy: { ...DEFAULT_FOLLOW_UP_POLICY },
     projects: projects.map((p, i) => ({ ...p,
+      fixedTarget: i % 2 === 0, projectLevel: (['无风险', '低风险', '高风险', null] as const)[i % 4],
       solutions: p.solution ? [{ solution: p.solution, subSolutions: p.subSolution ? [p.subSolution] : [] }, ...(i % 5 === 0 && p.solution !== SOLUTION_CATALOG[0].name ? [{ solution: SOLUTION_CATALOG[0].name, subSolutions: [SOLUTION_CATALOG[0].subSolutions[0].name] }] : [])] : [],
       responsibleIds: [people[i % 2].id], responsibles: [{ personId: people[i % 2].id, name: people[i % 2].name, employeeNo: people[i % 2].employeeNo, account: people[i % 2].account, source: 'manual' }],
       hcsOpportunityId: p.track === 'HCS' ? `DEMO-HCS-${i + 1}` : null, hcsStatus: p.track === 'HCS' ? '演示：已立项' : null,
-      lastFollowUpAt: [p.createdAt, ...progressLogs.filter((g) => g.projectId === p.id).map((g) => g.createdAt), ...changeLogs.filter((g) => g.projectId === p.id && g.field !== 'deleted').map((g) => g.createdAt)].sort().at(-1), nextActionDate: actionDates[i % actionDates.length], nextActionNote: actionDates[i % actionDates.length] ? '演示行动：确认需求与下一次交流' : '',
+      lastFollowUpAt: new Date(Date.parse(`${today}T04:00:00Z`) - [6, 13, 7, 14, 10, 18][i % 6] * 86400000).toISOString(), nextActionDate: actionDates[i % actionDates.length], nextActionNote: actionDates[i % actionDates.length] ? '演示行动：确认需求与下一次交流' : '',
     })),
     revenues,
     progressLogs,

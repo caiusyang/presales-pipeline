@@ -28,6 +28,7 @@ class MySqlMigrationTest {
             assertTrue(context.getBean(com.presales.pipeline.product.ProductCatalog.class).codes().contains("WAF"));
             var backup=context.getBean(com.presales.pipeline.backup.BackupService.class).exportAll();
             assertEquals(2,backup.tables().get("projects").size());assertTrue(backup.tables().containsKey("purged_project_snapshots"));
+            assertEquals(1,backup.tables().get("follow_up_policies").size());
         }
         try(var connection=DriverManager.getConnection(url,username,password);var statement=connection.createStatement()){
             try(var r=statement.executeQuery("select count(*),sum(security_budget) from projects")){r.next();assertEquals(2,r.getInt(1));assertEquals("10.50",r.getBigDecimal(2).toPlainString());}
@@ -36,6 +37,8 @@ class MySqlMigrationTest {
             try(var r=statement.executeQuery("select count(*) from migration_issues where project_id=90002 and area='solutions' and original_value like '%无法匹配原文%'")){r.next();assertEquals(1,r.getInt(1));}
             try(var r=statement.executeQuery("select count(*),sum(amount) from revenues")){r.next();assertEquals(1,r.getInt(1));assertEquals("123.45",r.getBigDecimal(2).toPlainString());}
             try(var r=statement.executeQuery("select count(*) from project_products")){r.next();assertEquals(1,r.getInt(1));}
+            try(var r=statement.executeQuery("select fixed_target,project_level,last_follow_up_at from projects where id=90001")){r.next();assertFalse(r.getBoolean(1));assertNull(r.getString(2));assertTrue(r.getString(3).startsWith("2025-02-01"));}
+            try(var r=statement.executeQuery("select fixed_target_days,normal_days from follow_up_policies where id=1")){r.next();assertEquals(7,r.getInt(1));assertEquals(14,r.getInt(2));}
         }
     }
 }

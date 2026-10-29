@@ -10,6 +10,7 @@
 - 可维护产品目录（预置 AAD、WAF、CFW、ESA、HSS、NDR、DEW、DSC、SecMaster、DBSS、CBH、安全运营专业服务、大模型防火墙、智能体卫士），支持新增、名称、别名、适用赛道及停用
 - HCS/公有云赛道、安全方向分离；按赛道保存字段范围、列偏好及模板；历史不确定值进入迁移待处理
 - 最后跟进时间、行动日期/内容、到期提醒及后端分页前行动排序
+- 是否固定靶关联跟进周期（默认 7／14 天）、仅提醒未中标活动项目；独立项目级别（无风险／低风险／高风险）与跨页需跟进筛选
 - 责任人库、Excel/CSV 导入与多人精确匹配；独立 HCS 绑定/状态字段（真实 HCS 接口按用户决定暂留，尚未接通）
 - `external_id` 优先、客户名称加项目名称兜底的导入判重
 - 手工修改和导入覆盖的字段级变更日志，启用登录时记录登录账号
@@ -55,9 +56,11 @@
 └── .env.example                 部署参数模板
 ```
 
-数据库由 Flyway 增量迁移至 V14；`project_solutions`、`project_responsibles` 保存结构化关系，`product_catalog` 保存动态目录，`batch_jobs`/`batch_job_items` 保存持久任务。`project_products` 保存拥有记录；`projects.purchased_products` 保留列表兼容字段并由服务层同步维护。
+数据库由 Flyway 增量迁移至 V15；`project_solutions`、`project_responsibles` 保存结构化关系，`product_catalog` 保存动态目录，`batch_jobs`/`batch_job_items` 保存持久任务，`follow_up_policies` 保存跟进周期。`project_products` 保存拥有记录；`projects.purchased_products` 保留列表兼容字段并由服务层同步维护。
 
 本轮详见 [交付状态](docs/UPGRADE_STATUS.md)、[操作说明](docs/UPGRADE_GUIDE.md)、[验收报告](docs/ACCEPTANCE.md)、[性能对比](docs/PERFORMANCE.md)、[HCS 遗留边界](docs/HCS_INTEGRATION.md)。字段对照和两套本地项目导入模板位于 `docs/deliverables/`。
+
+2026-10-29 新增固定靶跟进提醒，规则、导入字段与本次验收见 [跟进提醒说明](docs/FOLLOW_UP_REMINDERS.md)。原导入模板仍有效；可自行增加“是否固定靶”“项目级别”列，导入自动映射到系统字段。
 
 自定义字典的使用顺序：在“系统设置 → 字典管理”创建字典并导入值，再在“自定义字段”中新增或编辑“选项”字段，将选项来源切换为该字典。可选字段允许先关联空字典；必填字段需先配置字典值。已有手填选项字段不会自动关联，绑定时会先检查原项目值是否与字典一致。自建字典为单层选项，现有行业与方案/产品层级不变。
 
@@ -225,7 +228,7 @@ presales-pipeline-YYYYMMDD-HHMMSS.sql.gz
 GET /api/backup
 ```
 
-会下载包含 8 张表、软删除记录和完整修改日志的 JSON。它适合快速留档；灾难恢复优先使用 MySQL 压缩备份。
+会下载包含 19 张表、软删除记录、完整修改日志、后台任务及跟进规则的 JSON。它适合快速留档；灾难恢复优先使用 MySQL 压缩备份。
 
 ### 恢复 MySQL 备份
 

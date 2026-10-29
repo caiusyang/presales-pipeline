@@ -9,6 +9,7 @@ import { normalizeDateValue } from './importTransform'
 import type { TransformProblem } from './importTransform'
 import { solutionSelections, normalizeSolutions, withSolutions } from '@/lib/solutions'
 import type { Project, SolutionSelection } from '@/types'
+import { parseFixedTarget, PROJECT_LEVELS } from '@/lib/followUp'
 
 export type FieldEdits = Record<string, unknown>
 export interface ReviewSession {
@@ -34,7 +35,7 @@ export function excludeImportRows(session: ReviewSession, sourceRows: number[]):
   for (const sourceRow of sourceRows) if (!session.completed[sourceRow]) excluded[sourceRow] = true
   return { ...session, excluded }
 }
-export const valueText = (value: unknown): string => Array.isArray(value) ? value.some((v) => typeof v === 'object') ? JSON.stringify(value) : value.join('、') : String(value ?? '').trim()
+export const valueText = (value: unknown): string => typeof value === 'boolean' ? value ? '是' : '否' : Array.isArray(value) ? value.some((v) => typeof v === 'object') ? JSON.stringify(value) : value.join('、') : String(value ?? '').trim()
 export const fieldValue = (fields: Partial<ProjectInput>, key: string): unknown => key.startsWith('custom.')
   ? fields.customFields?.[key.slice(7)] : (fields as Record<string, unknown>)[key]
 export const fieldLabel = (key: string, defs: CustomFieldDef[]) => key.startsWith('custom.')
@@ -43,7 +44,9 @@ export const fieldLabel = (key: string, defs: CustomFieldDef[]) => key.startsWit
 /** 无法序列化为有效收入/日期的行先留在本地，不能占用服务端批内判重标识。 */
 export function localImportIssues(record: ImportRecordInput, problems: TransformProblem[]): ImportIssue[] {
   return problems.filter((problem) => problem.excelRow === record.sourceRow
-    && !(problem.field === 'securityBudget' && !validateSecurityBudget(record.fields.securityBudget)))
+    && !(problem.field === 'securityBudget' && !validateSecurityBudget(record.fields.securityBudget))
+    && !(problem.field === 'fixedTarget' && parseFixedTarget(record.fields.fixedTarget) !== null)
+    && !(problem.field === 'projectLevel' && (!record.fields.projectLevel || PROJECT_LEVELS.includes(record.fields.projectLevel))))
     .map((problem) => ({ field: problem.field ?? '_record', code: 'format', message: problem.message }))
 }
 
@@ -55,7 +58,7 @@ export function applyEdits(record: ImportRecordInput, edits: FieldEdits = {}): I
   const fields = { ...record.fields, customFields: { ...record.fields.customFields } }
   for (const [key, value] of Object.entries(edits)) {
     if (key.startsWith('custom.')) fields.customFields[key.slice(7)] = value
-    else (fields as Record<string, unknown>)[key] = key === 'purchasedProducts' ? productValues(value) : value
+    else (fields as Record<string, unknown>)[key] = key === 'purchasedProducts' ? productValues(value) : key === 'fixedTarget' ? parseFixedTarget(value) ?? value : value
   }
   if (Object.hasOwn(edits, 'solutions') && Array.isArray(fields.solutions)) return { ...record, fields: withSolutions(fields, fields.solutions) }
   if (Object.hasOwn(edits, 'solution') || Object.hasOwn(edits, 'subSolution')) delete fields.solutions
@@ -76,6 +79,8 @@ export function fieldContext(key: string, fields: Partial<ProjectInput>): Record
 }
 export function optionsForField(key: string, fields: Partial<ProjectInput>, dictionaries: DictNode[], defs: CustomFieldDef[]): string[] | null {
   if (key === 'projectStatus') return [...PROJECT_STATUSES]
+  if (key === 'fixedTarget') return ['是', '否']
+  if (key === 'projectLevel') return [...PROJECT_LEVELS]
   if (key === 'purchasedProducts') return productDefinitions().map((p) => p.code)
   if (key.startsWith('custom.')) {
     const def = defs.find((d) => d.fieldKey === key.slice(7))
@@ -108,6 +113,8 @@ export function validateImportRecord(record: ImportRecordInput, dictionaries: Di
   const fields = record.fields
   const issues: ImportIssue[] = []
   const add = (field: string, code: string, message: string) => issues.push({ field, code, message })
+  if (Object.hasOwn(fields, 'fixedTarget') && parseFixedTarget(fields.fixedTarget) === null) add('fixedTarget', 'format', '是否固定靶必须为是/否、true/false 或 1/0')
+  if (fields.projectLevel && !PROJECT_LEVELS.includes(fields.projectLevel)) add('projectLevel', 'option', '项目级别只能为无风险、低风险或高风险')
   let selections: SolutionSelection[] = []
   try {
     selections = solutionSelections(fields)
@@ -177,7 +184,8 @@ export function mergeImportFields(incoming: Partial<ProjectInput>, existing?: Pa
   const merged = { ...existing, ...incoming, customFields }
   if (!Object.hasOwn(incoming, 'solutions') && (Object.hasOwn(incoming, 'solution') || Object.hasOwn(incoming, 'subSolution'))) delete merged.solutions
   if (Array.isArray(merged.solutions)) Object.assign(merged, withSolutions(merged, normalizeSolutions(merged.solutions)))
-  return { ...merged, projectStatus: merged.projectStatus || '机会点识别' }
+  const fixedTarget = parseFixedTarget(merged.fixedTarget)
+  return { ...merged, fixedTarget: fixedTarget === null ? merged.fixedTarget : fixedTarget, projectLevel: merged.projectLevel || null, projectStatus: merged.projectStatus || '机会点识别' }
 }
 
 export function mappingRule(field: string, from: string, to: string, when: Record<string, string>): ValueRule {

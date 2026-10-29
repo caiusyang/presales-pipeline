@@ -21,10 +21,12 @@ import { getProjectFieldValue, industryCascade, solutionCascade } from '@/lib/fi
 import { fmtAmount } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { actionReminder } from '@/lib/actions'
+import { followUpReminder, formatFollowUpTime, PROJECT_LEVELS, type FollowUpPolicy } from '@/lib/followUp'
 import type { ID, Project } from '@/types'
 
 interface Props {
   today: string
+  followUpPolicy?: FollowUpPolicy
   onCompleteAction: (project: Project) => void
   projects: Project[]
   /** 可见列（已按用户顺序） */
@@ -64,6 +66,7 @@ export function ProjectTable({
   onRequestDelete,
   onRequestWin,
   today,
+  followUpPolicy,
   onCompleteAction,
 }: Props) {
   const [editing, setEditing] = useState<Editing | null>(null)
@@ -79,10 +82,12 @@ export function ProjectTable({
   const cascade = industryCascade(industryQ.data ?? [])
   const solutions = solutionCascade(solutionQ.data ?? [])
 
-  const isEditable = (key: string) => !recycleBin && !deleting && !['revenueTotal', 'projectStatus', 'purchasedProducts', 'lastFollowUpAt', 'solutions', 'solution', 'subSolution', 'responsibles', 'hcsStatus'].includes(key)
+  const isEditable = (key: string) => !recycleBin && !deleting && !['followUpReminder', 'revenueTotal', 'projectStatus', 'purchasedProducts', 'lastFollowUpAt', 'solutions', 'solution', 'subSolution', 'responsibles', 'hcsStatus'].includes(key)
 
   const dictOptionsFor = (key: string, row: Project): SelectOption[] | null => {
     const toOptions = (values: string[]) => values.map((v) => ({ value: v, label: v }))
+    if (key === 'fixedTarget') return toOptions(['是', '否'])
+    if (key === 'projectLevel') return toOptions([...PROJECT_LEVELS])
     if (key === 'industry') return toOptions(cascade.industries.map((n) => n.value))
     if (key === 'subIndustry') return toOptions((cascade.subMap.get(row.industry) ?? []).map((n) => n.value))
     if (key === 'track') return toOptions((trackQ.data ?? []).map((n) => n.value))
@@ -109,7 +114,7 @@ export function ProjectTable({
 
   const startEdit = (row: Project, key: string) => {
     if (!isEditable(key)) return
-    setEditing({ id: row.id, key, value: getProjectFieldValue(row, key) })
+    setEditing({ id: row.id, key, value: key === 'projectLevel' ? row.projectLevel ?? '' : getProjectFieldValue(row, key) })
   }
 
   const handleRowClick = (p: Project, e: MouseEvent) => {
@@ -136,7 +141,7 @@ export function ProjectTable({
           value={editing.value}
           onValueChange={(v) => commitEdit(v)}
           options={dictOptions}
-          clearable
+          clearable={editing.key !== 'fixedTarget'}
           clearLabel="（清空）"
           autoFocus
         />
@@ -206,8 +211,10 @@ export function ProjectTable({
         </TableRow>
       </TableHeader>
       <TableBody>
-        {projects.map((p) => (
-          <TableRow key={p.id} className={cn(!recycleBin && 'cursor-pointer', !recycleBin && actionReminder(p.nextActionDate, today).group === 0 && 'border-l-4 border-l-red-500 bg-red-50/30')} data-state={selectedIds.has(p.id) ? 'selected' : undefined} onClick={(e) => handleRowClick(p, e)}>
+        {projects.map((p) => {
+          const followUp = followUpPolicy ? followUpReminder(p, followUpPolicy, today) : null
+          return (
+          <TableRow key={p.id} className={cn(!recycleBin && 'cursor-pointer', !recycleBin && (actionReminder(p.nextActionDate, today).group === 0 || followUp?.due) && 'border-l-4 border-l-red-500 bg-red-50/30')} data-state={selectedIds.has(p.id) ? 'selected' : undefined} onClick={(e) => handleRowClick(p, e)}>
             <TableCell onClick={(event) => event.stopPropagation()}>
               <Checkbox aria-label={`选择项目 ${p.customerName} · ${p.projectName}`} disabled={deleting} checked={selectedIds.has(p.id)}
                 onCheckedChange={(checked) => onSelectProject(p, checked === true)} />
@@ -223,13 +230,14 @@ export function ProjectTable({
                     (col.key === 'revenueTotal' || col.key === 'securityBudget') && 'text-right tabular-nums',
                     editable && !isEditing && 'cursor-text',
                   )}
-                  title={isEditing ? undefined : getProjectFieldValue(p, col.key)}
+                  title={isEditing ? undefined : col.key === 'followUpReminder' ? followUp ? `${followUp.label}；${p.fixedTarget ? '固定靶' : '非固定靶'}，每 ${followUp.interval} 天；应跟进日期 ${followUp.dueDate ?? '待核对'}` : '提醒规则尚未读取' : getProjectFieldValue(p, col.key)}
                   onDoubleClick={editable ? () => handleCellDoubleClick(p, col.key) : undefined}
                 >
                   {isEditing
                     ? renderEditor(p)
+                    : col.key === 'followUpReminder' ? followUp ? <span className={cn('inline-flex flex-col rounded border px-2 py-1 text-xs', followUp.tone)}><span className="font-medium">{followUp.label}</span><span>{p.fixedTarget ? '固定靶' : '非固定靶'} · 每 {followUp.interval} 天{followUp.monitored && followUp.days != null ? ` · 已 ${followUp.days} 天未跟进` : ''}</span></span> : <span className="text-xs text-muted-foreground">提醒规则尚未读取</span>
                     : col.key === 'nextActionDate' ? <span className={cn('inline-flex flex-col rounded border border-transparent px-2 py-1 text-xs', actionReminder(p.nextActionDate, today).tone)}><span>{p.nextActionDate}</span><span>{actionReminder(p.nextActionDate, today).label}</span></span>
-                    : col.key === 'lastFollowUpAt' ? p.lastFollowUpAt?.replace('T', ' ').slice(0, 19) ?? '无业务修改记录'
+                    : col.key === 'lastFollowUpAt' ? formatFollowUpTime(p.lastFollowUpAt)
                     : col.key === 'revenueTotal' || col.key === 'securityBudget'
                       ? fmtAmount(col.key === 'revenueTotal' ? p.revenueTotal : p.securityBudget)
                       : getProjectFieldValue(p, col.key) || <span className="text-muted-foreground/50">-</span>}
@@ -274,7 +282,7 @@ export function ProjectTable({
               )}
             </TableCell>
           </TableRow>
-        ))}
+        )})}
       </TableBody>
     </Table>
   )

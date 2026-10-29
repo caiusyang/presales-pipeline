@@ -52,14 +52,19 @@ export function useProductCatalog() {
   return useQuery({ queryKey: ['product-catalog'], queryFn: async () => { const products = await api.listProductCatalog(); setProductCatalog(products); return products } })
 }
 export function usePeople() { return useQuery({ queryKey: ['people'], queryFn: () => api.listPeople() }) }
+export function useFollowUpPolicy() { return useQuery({ queryKey: ['follow-up-policy'], queryFn: () => api.getFollowUpPolicy() }) }
+export function useSaveFollowUpPolicy() {
+  const qc = useQueryClient()
+  return useMutation({ mutationFn: api.saveFollowUpPolicy, onSuccess: (policy) => { qc.setQueryData(['follow-up-policy'], policy); void qc.invalidateQueries({ queryKey: ['projects'] }); toast.success('跟进提醒规则已保存') }, onError: onErr })
+}
 export function useProductCatalogMutations() {
   const qc = useQueryClient()
   return useMutation({ mutationFn: ({ id, input }: { id?: number; input: ProductInput }) => id ? api.updateProduct(id, input) : api.createProduct(input), onSuccess: async () => { await qc.invalidateQueries({ queryKey: ['product-catalog'] }); await qc.invalidateQueries({ queryKey: ['export-fields'] }); await qc.invalidateQueries({ queryKey: ['dicts'] }); toast.success('产品目录已保存') }, onError: onErr })
 }
 
 // ---------------- 项目 ----------------
-export function useProjects(q: ProjectListQuery) {
-  return useQuery({ queryKey: qk.projects(q), queryFn: () => api.listProjects(q) })
+export function useProjects(q: ProjectListQuery, enabled = true) {
+  return useQuery({ queryKey: qk.projects(q), queryFn: () => api.listProjects(q), enabled })
 }
 
 export function useProjectDetail(id: ID | null) {

@@ -273,6 +273,7 @@ public class ConfigService {
     private void apply(ExportTemplate template, ExportTemplateRequest request, String scope) {
         Set<String> allowedKeys = allowedExportKeys(scope);
         Set<String> keys = new LinkedHashSet<>();
+        if(scope.equals(ExportScope.COMBINED)||scope.equals(ExportScope.PROJECTS))keys.addAll(Set.of("fixedTarget","projectLevel"));
         List<Map<String, Object>> columns = new ArrayList<>();
         for (ExportColumnRequest column : expandLegacyProductColumns(scope, request.columns())) {
             String key = clean(column.key());

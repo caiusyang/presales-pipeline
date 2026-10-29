@@ -20,7 +20,8 @@ import { ProjectTable } from '@/components/project/ProjectTable'
 import { WinProjectDialog } from '@/components/project/WinProjectDialog'
 import { CompleteActionDialog } from '@/components/project/CompleteActionDialog'
 import { useBusinessDate } from '@/hooks/useBusinessDate'
-import { useCustomFieldDefs, useDictionaries, useProjectMutations, useProjects, usePeople } from '@/hooks/queries'
+import { useCustomFieldDefs, useDictionaries, useProjectMutations, useProjects, usePeople, useFollowUpPolicy } from '@/hooks/queries'
+import { PROJECT_LEVELS } from '@/lib/followUp'
 import { industryCascade, solutionCascade } from '@/lib/fields'
 import { cn } from '@/lib/utils'
 import type { ProjectListQuery } from '@/api/types'
@@ -38,6 +39,9 @@ export default function PipelinePage() {
   const [industry, setIndustry] = useState('')
   const [track, setTrack] = useState('')
   const [projectStatus, setProjectStatus] = useState('')
+  const [fixedTarget, setFixedTarget] = useState(''), [projectLevel, setProjectLevel] = useState('')
+  const [followUpDue, setFollowUpDue] = useState(false)
+  const followUpPolicyQ = useFollowUpPolicy()
   const [startMonth, setStartMonth] = useState('')
   const [endMonth, setEndMonth] = useState('')
   const [recycleBin, setRecycleBin] = useState(false)
@@ -69,13 +73,15 @@ export default function PipelinePage() {
   // 筛选/回收站/每页条数变化回到第 1 页
   useEffect(() => {
     setPage(0)
-  }, [debouncedKeyword, industry, track, projectStatus, startMonth, endMonth, recycleBin, size, actionRange, solution, subSolution, responsibleId, hcsStatus])
+  }, [debouncedKeyword, industry, track, projectStatus, startMonth, endMonth, recycleBin, size, actionRange, solution, subSolution, responsibleId, hcsStatus, fixedTarget, projectLevel, followUpDue])
 
   // 分页及排序保留选择；改变筛选范围时清空，避免删除隐藏在旧筛选中的项目。
   useEffect(() => {
     setSelectedProjects(new Map())
     setDeleteFailures([])
-  }, [keyword, industry, track, projectStatus, startMonth, endMonth, recycleBin, size, actionRange, solution, subSolution, responsibleId, hcsStatus])
+  }, [keyword, industry, track, projectStatus, startMonth, endMonth, recycleBin, size, actionRange, solution, subSolution, responsibleId, hcsStatus, fixedTarget, projectLevel, followUpDue])
+
+  useEffect(() => { if (recycleBin) setFollowUpDue(false) }, [recycleBin])
 
   // ---------- 数据 ----------
   const query: ProjectListQuery = {
@@ -88,12 +94,16 @@ export default function PipelinePage() {
     ...(industry ? { industry } : {}),
     ...(track ? { track } : {}),
     ...(projectStatus ? { projectStatus } : {}),
+    ...(fixedTarget ? { fixedTarget: fixedTarget === 'true' } : {}),
+    ...(projectLevel ? { projectLevel } : {}),
+    ...(followUpDue && !recycleBin ? { followUpRange: 'due' as const } : {}),
     ...(startMonth ? { startMonth } : {}),
     ...(endMonth ? { endMonth } : {}),
     ...(recycleBin ? { deleted: true } : {}),
     ...(sort.sortBy ? { sortBy: sort.sortBy, sortDirection: sort.sortDirection ?? 'asc' } : {}),
   }
   const projectsQ = useProjects(query)
+  const followUpCountQ = useProjects({ ...query, page: 0, size: 1, deleted: false, followUpRange: 'due' }, !recycleBin && !!followUpPolicyQ.data)
   const industryQ = useDictionaries('industry')
   const trackQ = useDictionaries('track')
   const solutionQ = useDictionaries('solution')
@@ -187,6 +197,8 @@ export default function PipelinePage() {
     <div className="space-y-4 p-6">
       {/* ---------- 工具栏 ---------- */}
       <div className="flex flex-wrap items-center gap-2">
+        <Select className="w-40" aria-label="是否固定靶筛选" value={fixedTarget} onValueChange={setFixedTarget} options={[{ value: 'true', label: '固定靶' }, { value: 'false', label: '非固定靶' }]} placeholder="是否固定靶" clearable clearLabel="全部固定靶类型" />
+        <Select className="w-40" aria-label="项目级别筛选" value={projectLevel} onValueChange={setProjectLevel} options={PROJECT_LEVELS.map((level) => ({ value: level, label: level }))} placeholder="项目级别" clearable clearLabel="全部项目级别" />
         <Select className="w-44" value={solution} onValueChange={(v) => { setSolution(v); setSubSolution('') }} options={solutionTree.solutions.map((s) => ({ value: s.value, label: s.value }))} placeholder="解决方案" clearable clearLabel="全部方案" />
         <Select className="w-44" value={subSolution} onValueChange={setSubSolution} options={(solutionTree.subMap.get(solution) ?? []).map((s) => ({ value: s.value, label: s.value }))} disabled={!solution} placeholder="细分解决方案" clearable clearLabel="全部细分方案" />
         <Select className="w-44" value={responsibleId} onValueChange={setResponsibleId} options={(peopleQ.data ?? []).map((p) => ({ value: String(p.id), label: `${p.name}${p.employeeNo ? ` · ${p.employeeNo}` : ''}` }))} placeholder="责任人" clearable clearLabel="全部责任人" />
@@ -275,6 +287,15 @@ export default function PipelinePage() {
         </div>
       )}
 
+      {!recycleBin && <div className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/30 px-3 py-2 text-sm">
+        {followUpPolicyQ.isError ? <span role="alert">跟进提醒规则读取失败，暂不计算提醒。<Button variant="link" size="sm" onClick={() => void followUpPolicyQ.refetch()}>重试</Button></span> : followUpPolicyQ.data ? <>
+          <span>跟进提醒：固定靶每 {followUpPolicyQ.data.fixedTargetDays} 天／非固定靶每 {followUpPolicyQ.data.normalDays} 天</span>
+          <Button size="sm" variant={followUpDue ? 'default' : 'outline'} onClick={() => setFollowUpDue((value) => !value)} aria-pressed={followUpDue}>只看需跟进{followUpCountQ.isError ? '（计数失败）' : followUpCountQ.isFetching ? '（统计中…）' : `（${followUpCountQ.data?.total ?? 0}）`}</Button>
+          <span className="text-xs text-muted-foreground">统计当前筛选范围的全部分页，仅提醒未中标的活动项目；项目级别不改变周期。</span>
+        </> : <span>正在读取跟进提醒规则…</span>}
+        <Link to="/settings?tab=follow-up" className="ml-auto text-xs underline underline-offset-4">调整跟进周期</Link>
+      </div>}
+
       <div className="flex flex-wrap items-center gap-2 text-sm">
         <span className="text-xs text-muted-foreground">行动提醒（上海日期 {today}）</span>
         {[['', '全部'], ['overdue', '逾期'], ['today', '今天'], ['next7', '未来 7 天'], ['unscheduled', '未安排']].map(([value, label]) => <Button key={value} size="sm" variant={(actionRange ?? '') === value ? 'default' : 'outline'} onClick={() => setActionRange((value || undefined) as ProjectListQuery['actionRange'])}>{label}</Button>)}
@@ -312,6 +333,7 @@ export default function PipelinePage() {
           <ProjectTable
             projects={items}
             today={today}
+            followUpPolicy={followUpPolicyQ.isError ? undefined : followUpPolicyQ.data}
             onCompleteAction={setActionTarget}
             columns={visibleColumns}
             recycleBin={recycleBin}

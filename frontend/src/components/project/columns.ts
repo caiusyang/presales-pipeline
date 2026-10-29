@@ -35,7 +35,7 @@ export function buildAvailableColumns(customDefs: CustomFieldDef[]): PipelineCol
   const custom: PipelineColumn[] = [...customDefs]
     .sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id)
     .map((d) => ({ key: `custom.${d.fieldKey}`, label: d.label, defaultVisible: true }))
-  return [...base, ...custom]
+  return [{ key: 'followUpReminder', label: '跟进提醒', defaultVisible: true }, ...base, ...custom]
 }
 
 /** 读取持久化配置并与当前可用列合并：已删除的列剔除，新增列按 defaultVisible 追加到末尾 */

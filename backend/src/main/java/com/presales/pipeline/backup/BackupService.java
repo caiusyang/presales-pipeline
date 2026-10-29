@@ -55,6 +55,7 @@ public class BackupService {
     private final com.presales.pipeline.migration.MigrationIssueRepository migrationIssues;
     private final com.presales.pipeline.people.PersonRepository people;
     private final com.presales.pipeline.people.ProjectPersonRepository responsibles;
+    private final com.presales.pipeline.followup.FollowUpPolicyRepository followUpPolicies;
 
     public BackupService(ProjectRepository projectRepository,
                          RevenueRepository revenueRepository,
@@ -64,7 +65,8 @@ public class BackupService {
                          ImportMappingRepository importMappingRepository,
                          ExportTemplateRepository exportTemplateRepository,
                          CustomFieldDefinitionRepository customFieldRepository,
-                         ChangeLogRepository changeLogRepository, DictionaryCategoryRepository categoryRepository,com.presales.pipeline.tasks.JobStore jobStore,com.presales.pipeline.product.ProductDefinitionRepository products,com.presales.pipeline.solution.ProjectSolutionRepository solutions,com.presales.pipeline.migration.MigrationIssueRepository migrationIssues,com.presales.pipeline.people.PersonRepository people,com.presales.pipeline.people.ProjectPersonRepository responsibles) {
+                         ChangeLogRepository changeLogRepository, DictionaryCategoryRepository categoryRepository,com.presales.pipeline.tasks.JobStore jobStore,com.presales.pipeline.product.ProductDefinitionRepository products,com.presales.pipeline.solution.ProjectSolutionRepository solutions,com.presales.pipeline.migration.MigrationIssueRepository migrationIssues,com.presales.pipeline.people.PersonRepository people,com.presales.pipeline.people.ProjectPersonRepository responsibles,com.presales.pipeline.followup.FollowUpPolicyRepository followUpPolicies) {
+        this.followUpPolicies=followUpPolicies;
         this.people=people;this.responsibles=responsibles;
         this.products=products;this.solutions=solutions;this.migrationIssues=migrationIssues;
         this.jobStore=jobStore;
@@ -84,6 +86,7 @@ public class BackupService {
     public BackupResponse exportAll() {
         Map<String, List<Map<String, Object>>> tables = new LinkedHashMap<>();
         tables.putAll(jobStore.backup());
+        tables.put("follow_up_policies",followUpPolicies.findAll().stream().map(p->{Map<String,Object> row=new LinkedHashMap<>();row.put("id",p.id);row.put("fixedTargetDays",p.fixedTargetDays);row.put("normalDays",p.normalDays);row.put("updatedAt",p.updatedAt);return row;}).toList());
         tables.put("responsible_people",people.findAll(Sort.by("id")).stream().map(p->{Map<String,Object> row=base(p);row.put("name",p.getName());row.put("employeeNo",p.getEmployeeNo());row.put("account",p.getAccount());row.put("aliases",p.getAliases());row.put("enabled",p.isEnabled());return row;}).toList());
         tables.put("project_responsibles",responsibles.findAll(Sort.by("id")).stream().map(r->{Map<String,Object> row=base(r);row.put("projectId",r.project.getId());row.put("personId",r.person.getId());row.put("source",r.source);row.put("role",r.role);return row;}).toList());
         tables.put("product_catalog",products.findAll(Sort.by("id")).stream().map(p->{Map<String,Object> row=base(p);row.put("code",p.code);row.put("name",p.name);row.put("aliases",p.aliases);row.put("applicableTracks",p.applicableTracks);row.put("sortOrder",p.sortOrder);row.put("enabled",p.enabled);return row;}).toList());
@@ -106,6 +109,7 @@ public class BackupService {
 
     private Map<String, Object> projectRow(Project project) {
         Map<String, Object> row = softBase(project);
+        row.put("fixedTarget",project.isFixedTarget());row.put("projectLevel",project.getProjectLevel());
         row.put("externalId", project.getExternalId());
         row.put("hcsOpportunityId",project.getHcsOpportunityId());row.put("hcsStatus",project.getHcsStatus());row.put("lastSyncAt",project.getLastSyncAt());row.put("responsibleIds",project.getResponsibleIds());
         row.put("lastFollowUpAt",project.getLastFollowUpAt());row.put("nextActionDate",project.getNextActionDate());row.put("nextActionNote",project.getNextActionNote());

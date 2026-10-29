@@ -43,9 +43,12 @@ public class ProjectController {
             @RequestParam(required=false) String solution,
             @RequestParam(required=false) String subSolution,
             @RequestParam(required=false) Long responsibleId,
-            @RequestParam(required=false) String hcsStatus) {
+            @RequestParam(required=false) String hcsStatus,
+            @RequestParam(required=false) String followUpRange,
+            @RequestParam(required=false) Boolean fixedTarget,
+            @RequestParam(required=false) String projectLevel) {
         return ApiResponse.success(service.list(industry, track, projectStatus, keyword, startMonth, endMonth,
-                page, size, sortBy, sortDirection, deleted,actionRange,solution,subSolution,responsibleId,hcsStatus));
+                page, size, sortBy, sortDirection, deleted,actionRange,solution,subSolution,responsibleId,hcsStatus,followUpRange,fixedTarget,projectLevel));
     }
     public record Action(java.time.LocalDate nextActionDate,@jakarta.validation.constraints.Size(max=20000) String nextActionNote){}
     @PostMapping("/{id}/complete-action") public ApiResponse<ProjectResponse> completeAction(@PathVariable Long id,@Valid @RequestBody Action action){return ApiResponse.success(service.completeAction(id,action.nextActionDate(),action.nextActionNote()));}

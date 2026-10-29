@@ -15,6 +15,8 @@ import {
 export type InferredFieldType = Extract<CustomFieldType, 'text' | 'number' | 'date'>
 
 const FIELD_ALIASES: Record<string, string[]> = {
+  fixedTarget: ['是否固定靶', '固定靶', '固定靶项目', '是否固定靶项目'],
+  projectLevel: ['项目级别', '风险级别', '风险等级', '项目风险等级'],
   externalId: ['外部编号', '外部系统编号', '项目编号', '编号'],
   customerName: ['客户名称', '客户名', '客户'],
   projectName: ['项目名称', '项目名', '项目'],

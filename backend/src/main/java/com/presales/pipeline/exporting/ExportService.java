@@ -93,6 +93,7 @@ public class ExportService {
     public List<ExportFieldResponse> availableFields(String requestedScope) {
         String scope = ExportScope.normalize(requestedScope);
         List<ExportFieldResponse> fields = new ArrayList<>(STANDARD_FIELDS.get(scope));
+        if(isProjectScope(scope)){fields.add(field("fixedTarget","是否固定靶"));fields.add(field("projectLevel","项目级别"));}
         if(isProjectScope(scope)){fields.add(field("lastFollowUpAt","最后跟进时间"));fields.add(field("nextActionDate","下次行动日期"));fields.add(field("nextActionNote","下次行动内容"));fields.add(field("securityDirection","安全方向"));fields.add(field("solutions","方案集合（JSON）"));}
         if (isProjectScope(scope)) {
             fields.add(field("responsibles","责任人（含来源与岗位）"));fields.add(field("hcsOpportunityId","HCS机会点编号"));fields.add(field("hcsStatus","HCS状态"));fields.add(field("lastSyncAt","最近同步时间"));
@@ -302,6 +303,8 @@ public class ExportService {
             return project.getPurchasedProducts().contains(productCode) ? "已购" : "";
         }
         return switch (key) {
+            case "fixedTarget" -> project.isFixedTarget()?"是":"否";
+            case "projectLevel" -> project.getProjectLevel();
             case "lastFollowUpAt" -> project.getLastFollowUpAt();
             case "nextActionDate" -> project.getNextActionDate();
             case "nextActionNote" -> project.getNextActionNote();

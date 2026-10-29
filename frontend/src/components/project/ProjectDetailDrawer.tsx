@@ -431,7 +431,7 @@ function RevenueTab({ projectId, revenues }: { projectId: ID; revenues: Revenue[
 
 function ChangeLogTab({ logs, customDefs }: { logs: ChangeLog[]; customDefs: CustomFieldDef[] }) {
   if (logs.length === 0) return <EmptyState title="暂无修改日志" />
-  const display = (v: string) => (v === '' ? '（空）' : v)
+  const display = (v: string, field: string) => v === '' ? '（空）' : field === 'fixedTarget' ? v === 'true' ? '是' : v === 'false' ? '否' : v : v
   return (
     <Table>
       <TableHeader>
@@ -451,9 +451,9 @@ function ChangeLogTab({ logs, customDefs }: { logs: ChangeLog[]; customDefs: Cus
             </TableCell>
             <TableCell className="whitespace-nowrap">{changeLogFieldLabel(log.field, customDefs)}</TableCell>
             <TableCell className="max-w-72">
-              <span className="break-all">{display(log.oldValue)}</span>
+              <span className="break-all">{display(log.oldValue, log.field)}</span>
               <span className="mx-1 text-muted-foreground">→</span>
-              <span className="break-all">{display(log.newValue)}</span>
+              <span className="break-all">{display(log.newValue, log.field)}</span>
             </TableCell>
             <TableCell>
               <Badge variant={log.source === 'import' ? 'info' : 'secondary'}>

@@ -24,6 +24,8 @@ export interface ProjectFieldDef {
 }
 
 export const PROJECT_FIELD_DEFS: ProjectFieldDef[] = [
+  { key: 'fixedTarget', label: '是否固定靶', kind: 'status', defaultVisible: true, editable: true },
+  { key: 'projectLevel', label: '项目级别', kind: 'status', defaultVisible: true, editable: true },
   { key: 'nextActionDate', label: '下次行动日期', kind: 'date', defaultVisible: true, editable: true },
   { key: 'nextActionNote', label: '下次行动内容', kind: 'textarea', defaultVisible: false, editable: true },
   { key: 'lastFollowUpAt', label: '最后跟进时间', kind: 'computed', defaultVisible: true, editable: false },
@@ -60,6 +62,8 @@ export const REQUIRED_PROJECT_FIELDS: ProjectFieldKey[] = ['customerName', 'proj
 
 /** 取项目某字段的展示值（含 computed 与 custom.xxx） */
 export function getProjectFieldValue(p: Project, key: string): string {
+  if (key === 'fixedTarget') return p.fixedTarget ? '是' : '否'
+  if (key === 'projectLevel') return p.projectLevel || '未设置'
   if (key === 'track') return p.track || '待分类'
   if (key === 'solutions') return solutionText(solutionSelections(p))
   if (key === 'hcsStatus') return p.hcsStatus || '未同步'

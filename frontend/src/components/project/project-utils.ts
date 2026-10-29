@@ -1,6 +1,7 @@
 import { PROJECT_FIELD_LABELS, REQUIRED_PROJECT_FIELDS, appliesToTrack } from '@/lib/fields'
 import type { CustomFieldDef, Project, ProjectInput } from '@/types'
 import { normalizeSolutions, solutionSelections, withSolutions } from '@/lib/solutions'
+import { parseFixedTarget, PROJECT_LEVELS } from '@/lib/followUp'
 
 // ============================================================
 // 项目表单/编辑的纯函数工具：列表行内编辑、新建 Dialog、详情概览共用
@@ -9,6 +10,7 @@ import { normalizeSolutions, solutionSelections, withSolutions } from '@/lib/sol
 export function emptyProjectInput(): ProjectInput {
   return {
     externalId: null,
+    fixedTarget: false, projectLevel: '',
     hcsOpportunityId: '', responsibleIds: [],
     customerName: '',
     projectName: '',
@@ -34,6 +36,7 @@ export function emptyProjectInput(): ProjectInput {
 export function projectToInput(p: Project): ProjectInput {
   return {
     externalId: p.externalId,
+    fixedTarget: p.fixedTarget ?? false, projectLevel: p.projectLevel ?? '',
     hcsOpportunityId: p.hcsOpportunityId ?? '', responsibleIds: [...(p.responsibleIds ?? [])],
     customerName: p.customerName,
     projectName: p.projectName,
@@ -57,6 +60,8 @@ export function projectToInput(p: Project): ProjectInput {
 
 /** 必填校验，返回错误文案；null 表示通过 */
 export function validateProjectInput(input: ProjectInput, customDefs: CustomFieldDef[]): string | null {
+  if (input.fixedTarget != null && typeof input.fixedTarget !== 'boolean') return '是否固定靶须选择是或否'
+  if (input.projectLevel && !PROJECT_LEVELS.includes(input.projectLevel)) return '项目级别只能为无风险、低风险、高风险'
   for (const key of REQUIRED_PROJECT_FIELDS) {
     if (!String(input[key] ?? '').trim()) return `请填写${PROJECT_FIELD_LABELS[key] ?? key}`
   }
@@ -113,6 +118,7 @@ export function validateSecurityBudget(value: unknown): string | null {
 
 /** 把一次单元格编辑合并进 ProjectInput；行业变更时联动清空子行业 */
 export function applyFieldEdit(input: ProjectInput, key: string, value: string): ProjectInput {
+  if (key === 'fixedTarget') return { ...input, fixedTarget: parseFixedTarget(value) ?? input.fixedTarget ?? false }
   if (key.startsWith('custom.')) {
     return { ...input, customFields: { ...input.customFields, [key.slice(7)]: value } }
   }

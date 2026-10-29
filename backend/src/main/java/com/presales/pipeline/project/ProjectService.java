@@ -73,6 +73,7 @@ public class ProjectService {
     private final ProjectIdentityGuard identityGuard;
     private final com.presales.pipeline.migration.MigrationIssueRepository migrationIssues;
     private final com.presales.pipeline.tasks.TaskHistoryService taskHistory;
+    private final com.presales.pipeline.followup.FollowUpPolicyService followUpPolicy;
 
     public ProjectService(ProjectRepository projectRepository,
                           RevenueRepository revenueRepository,
@@ -82,7 +83,8 @@ public class ProjectService {
                           ConfigService configService,
                           DictionaryService dictionaryService,
                           ProjectProductService projectProductService,
-                          ProjectProductRepository projectProductRepository,com.presales.pipeline.migration.MigrationIssueRepository migrationIssues,ProductCatalog productCatalog,com.presales.pipeline.solution.ProjectSolutions solutions,com.presales.pipeline.solution.ProjectSolutionRepository solutionRepository,com.presales.pipeline.people.PeopleService people,com.presales.pipeline.people.ProjectPersonRepository personRepository,ProjectIdentityGuard identityGuard,com.presales.pipeline.tasks.TaskHistoryService taskHistory) {
+                          ProjectProductRepository projectProductRepository,com.presales.pipeline.migration.MigrationIssueRepository migrationIssues,ProductCatalog productCatalog,com.presales.pipeline.solution.ProjectSolutions solutions,com.presales.pipeline.solution.ProjectSolutionRepository solutionRepository,com.presales.pipeline.people.PeopleService people,com.presales.pipeline.people.ProjectPersonRepository personRepository,ProjectIdentityGuard identityGuard,com.presales.pipeline.tasks.TaskHistoryService taskHistory,com.presales.pipeline.followup.FollowUpPolicyService followUpPolicy) {
+        this.followUpPolicy=followUpPolicy;
         this.taskHistory=taskHistory;
         this.identityGuard=identityGuard;
         this.people=people;this.personRepository=personRepository;
@@ -125,6 +127,10 @@ public class ProjectService {
     }
     @Transactional(readOnly=true)
     public PageData<ProjectResponse> list(String industry,String track,String projectStatus,String keyword,String startMonth,String endMonth,int page,int size,String sortBy,String sortDirection,boolean deleted,String actionRange,String solution,String subSolution,Long responsibleId,String hcsStatus) {
+        return list(industry,track,projectStatus,keyword,startMonth,endMonth,page,size,sortBy,sortDirection,deleted,actionRange,solution,subSolution,responsibleId,hcsStatus,null,null,null);
+    }
+    @Transactional(readOnly=true)
+    public PageData<ProjectResponse> list(String industry,String track,String projectStatus,String keyword,String startMonth,String endMonth,int page,int size,String sortBy,String sortDirection,boolean deleted,String actionRange,String solution,String subSolution,Long responsibleId,String hcsStatus,String followUpRange,Boolean fixedTarget,String projectLevel) {
         String start = MonthUtils.validateNullable(startMonth, "开始月份");
         String end = MonthUtils.validateNullable(endMonth, "结束月份");
         MonthUtils.validateRange(start, end);
@@ -138,6 +144,7 @@ public class ProjectService {
         Sort.Direction direction = "asc".equalsIgnoreCase(sortDirection) ? Sort.Direction.ASC : Sort.Direction.DESC;
         boolean actionSort=sortBy==null||sortBy.isBlank()||sortBy.equals("actionPriority");
         var specification=ProjectSpecifications.filter(industry,track,projectStatus,keyword,start,end,deleted).and(ProjectSpecifications.actions(actionRange,actionSort)).and(ProjectSpecifications.solutions(solution,subSolution)).and(ProjectSpecifications.people(responsibleId,hcsStatus));
+        specification=specification.and(ProjectSpecifications.followUp(followUpRange,fixedTarget,projectLevel,followUpPolicy.get()));
         Page<Project> result = projectRepository.findAll(specification,actionSort?PageRequest.of(page,size):PageRequest.of(page,size,Sort.by(direction,property).and(Sort.by("id"))));
 
         List<Long> ids = result.getContent().stream().map(Project::getId).toList();
@@ -237,6 +244,7 @@ public class ProjectService {
         identityGuard.acquire(request.customerName(),request.projectName());
         NormalizedProject normalized = normalizeAndValidate(request, null);
         Project project = new Project();
+        project.setFixedTarget(Boolean.TRUE.equals(request.fixedTarget()));project.setProjectLevel(cleanNullable(request.projectLevel()));
         setAll(project, normalized);
         project.setNextActionDate(request.nextActionDate());project.setNextActionNote(cleanNullable(request.nextActionNote()));
         project.setSecurityDirection(cleanNullable(request.securityDirection()));
@@ -259,6 +267,8 @@ public class ProjectService {
             changeLogService.log(project,"projectIdentity",beforeIdentity,afterIdentity,source);
         }
         var previousSolutions=project.getSolutions();
+        if(request.fixedTarget()!=null)changeAndSet(project,"fixedTarget",project.isFixedTarget(),request.fixedTarget(),project::setFixedTarget,source);
+        if(request.projectLevel()!=null)changeAndSet(project,"projectLevel",project.getProjectLevel(),cleanNullable(request.projectLevel()),project::setProjectLevel,source);
         if(request.responsibleIds()!=null){var ids=request.responsibleIds().stream().distinct().sorted().toList();if(changeLogService.logIfChanged(project,"responsibleIds",project.getResponsibleIds(),ids,source))people.syncManual(project,ids);}
         if(request.hcsOpportunityId()!=null)changeAndSet(project,"hcsOpportunityId",project.getHcsOpportunityId(),cleanNullable(request.hcsOpportunityId()),project::setHcsOpportunityId,source);
         changeAndSet(project, "externalId", project.getExternalId(), normalized.externalId(), project::setExternalId, source);
@@ -307,7 +317,7 @@ public class ProjectService {
                 project.getSubSolution(), project.getPurchasedProducts(), project.getTrack(),
                 project.getIndustry(), project.getSubIndustry(), project.getScenario(), project.getKeyRisks(),
                 project.getKeyNeeds(), project.getCustomFields(), revenueTotal, project.isDeleted(),
-                project.getCreatedAt(), project.getUpdatedAt(),project.getLastFollowUpAt(),project.getNextActionDate(),project.getNextActionNote(),project.getSecurityDirection(),project.getSolutions(),project.getHcsOpportunityId(),project.getHcsStatus(),project.getLastSyncAt(),project.getResponsibleIds(),project.getResponsibles());
+                project.getCreatedAt(), project.getUpdatedAt(),project.getLastFollowUpAt(),project.getNextActionDate(),project.getNextActionNote(),project.getSecurityDirection(),project.getSolutions(),project.getHcsOpportunityId(),project.getHcsStatus(),project.getLastSyncAt(),project.getResponsibleIds(),project.getResponsibles(),project.isFixedTarget(),project.getProjectLevel());
     }
 
     @Transactional public ProjectResponse completeAction(Long id,java.time.LocalDate date,String note){
@@ -318,6 +328,7 @@ public class ProjectService {
     }
 
     private NormalizedProject normalizeAndValidate(ProjectRequest request, Long currentId) {
+        String level=cleanNullable(request.projectLevel());if(level!=null&&!List.of("无风险","低风险","高风险").contains(level))throw BusinessException.badRequest("项目级别只能为无风险、低风险、高风险");
         var previous=currentId==null?null:projectRepository.findById(currentId).orElseThrow(()->BusinessException.notFound("项目不存在"));
         String externalId = cleanNullable(request.externalId());
         String hcsId=cleanNullable(request.hcsOpportunityId());if(hcsId!=null&&projectRepository.existsByHcsOpportunityIdAndIdNot(hcsId,idOrSentinel(currentId)))throw BusinessException.conflict("HCS机会点编号已被其他项目绑定");
