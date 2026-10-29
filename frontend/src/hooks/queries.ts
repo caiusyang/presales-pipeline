@@ -217,6 +217,7 @@ export function useImportDictionaryValues() {
     onSuccess: (result) => {
       if (!result.dryRun) {
         qc.invalidateQueries({ queryKey: ['dicts'] })
+        qc.invalidateQueries({ queryKey: ['follow-up-fields'] })
         qc.invalidateQueries({ queryKey: qk.customFields() })
         qc.invalidateQueries({ queryKey: qk.dictionaryCategories() })
       }
