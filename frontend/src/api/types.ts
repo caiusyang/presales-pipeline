@@ -278,6 +278,7 @@ export interface JobApi {
 }
 
 export interface ApiClient extends JobApi {
+  getFollowUpFields(): Promise<import('@/lib/followUp').FollowUpField[]>
   getFollowUpPolicy(): Promise<import('@/lib/followUp').FollowUpPolicy>
   saveFollowUpPolicy(input: import('@/lib/followUp').FollowUpPolicy): Promise<import('@/lib/followUp').FollowUpPolicy>
   listPeople(): Promise<Person[]>

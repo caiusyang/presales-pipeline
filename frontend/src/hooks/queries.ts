@@ -53,6 +53,7 @@ export function useProductCatalog() {
 }
 export function usePeople() { return useQuery({ queryKey: ['people'], queryFn: () => api.listPeople() }) }
 export function useFollowUpPolicy() { return useQuery({ queryKey: ['follow-up-policy'], queryFn: () => api.getFollowUpPolicy() }) }
+export function useFollowUpFields() { return useQuery({ queryKey: ['follow-up-fields'], queryFn: () => api.getFollowUpFields() }) }
 export function useSaveFollowUpPolicy() {
   const qc = useQueryClient()
   return useMutation({ mutationFn: api.saveFollowUpPolicy, onSuccess: (policy) => { qc.setQueryData(['follow-up-policy'], policy); void qc.invalidateQueries({ queryKey: ['projects'] }); toast.success('跟进提醒规则已保存') }, onError: onErr })
@@ -232,6 +233,8 @@ export function useDictMutations() {
   const qc = useQueryClient()
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ['dicts'] })
+    qc.invalidateQueries({ queryKey: ['follow-up-fields'] })
+    qc.invalidateQueries({ queryKey: ['follow-up-policy'] })
     qc.invalidateQueries({ queryKey: qk.customFields() })
     qc.invalidateQueries({ queryKey: qk.dictionaryCategories() })
     qc.invalidateQueries({ queryKey: ['projects'] }) // 改名会同步项目引用
@@ -321,6 +324,9 @@ export function useCustomFieldDefs() {
 export function useCustomFieldMutations() {
   const qc = useQueryClient()
   const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ['follow-up-fields'] })
+    qc.invalidateQueries({ queryKey: ['follow-up-policy'] })
+    qc.invalidateQueries({ queryKey: ['projects'] })
     qc.invalidateQueries({ queryKey: qk.customFields() })
     qc.invalidateQueries({ queryKey: ['export-fields'] })
     qc.invalidateQueries({ queryKey: ['project-detail'] })

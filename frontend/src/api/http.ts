@@ -158,6 +158,7 @@ function normalizeMatrix(raw: RevenueMatrix): RevenueMatrix {
 
 export const httpApi: ApiClient = {
   getFollowUpPolicy: () => req('/config/follow-up-policy'),
+  getFollowUpFields: () => req('/config/follow-up-policy/fields'),
   saveFollowUpPolicy: (input) => req('/config/follow-up-policy', { method: 'PUT', body: JSON.stringify(input) }),
   listPeople: () => req('/config/people'),
   savePerson: (input, id) => req(`/config/people${id ? `/${id}` : ''}`, { method: id ? 'PUT' : 'POST', body: JSON.stringify(input) }),

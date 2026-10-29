@@ -230,12 +230,12 @@ export function ProjectTable({
                     (col.key === 'revenueTotal' || col.key === 'securityBudget') && 'text-right tabular-nums',
                     editable && !isEditing && 'cursor-text',
                   )}
-                  title={isEditing ? undefined : col.key === 'followUpReminder' ? followUp ? `${followUp.label}；${p.fixedTarget ? '固定靶' : '非固定靶'}，每 ${followUp.interval} 天；应跟进日期 ${followUp.dueDate ?? '待核对'}` : '提醒规则尚未读取' : getProjectFieldValue(p, col.key)}
+                  title={isEditing ? undefined : col.key === 'followUpReminder' ? followUp ? `${followUp.label}；${followUp.fieldLabel}：${followUp.matchLabel}，每 ${followUp.interval} 天${followUp.matched ? '' : '（默认周期）'}；应跟进日期 ${followUp.dueDate ?? '待核对'}` : '提醒规则尚未读取' : getProjectFieldValue(p, col.key)}
                   onDoubleClick={editable ? () => handleCellDoubleClick(p, col.key) : undefined}
                 >
                   {isEditing
                     ? renderEditor(p)
-                    : col.key === 'followUpReminder' ? followUp ? <span className={cn('inline-flex flex-col rounded border px-2 py-1 text-xs', followUp.tone)}><span className="font-medium">{followUp.label}</span><span>{p.fixedTarget ? '固定靶' : '非固定靶'} · 每 {followUp.interval} 天{followUp.monitored && followUp.days != null ? ` · 已 ${followUp.days} 天未跟进` : ''}</span></span> : <span className="text-xs text-muted-foreground">提醒规则尚未读取</span>
+                    : col.key === 'followUpReminder' ? followUp ? <span className={cn('inline-flex flex-col rounded border px-2 py-1 text-xs', followUp.tone)}><span className="font-medium">{followUp.label}</span><span>{followUp.matchLabel} · 每 {followUp.interval} 天{!followUp.matched && '（默认）'}{followUp.monitored && followUp.days != null ? ` · 已 ${followUp.days} 天未跟进` : ''}</span></span> : <span className="text-xs text-muted-foreground">提醒规则尚未读取</span>
                     : col.key === 'nextActionDate' ? <span className={cn('inline-flex flex-col rounded border border-transparent px-2 py-1 text-xs', actionReminder(p.nextActionDate, today).tone)}><span>{p.nextActionDate}</span><span>{actionReminder(p.nextActionDate, today).label}</span></span>
                     : col.key === 'lastFollowUpAt' ? formatFollowUpTime(p.lastFollowUpAt)
                     : col.key === 'revenueTotal' || col.key === 'securityBudget'

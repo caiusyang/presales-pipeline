@@ -144,7 +144,8 @@ public class ProjectService {
         Sort.Direction direction = "asc".equalsIgnoreCase(sortDirection) ? Sort.Direction.ASC : Sort.Direction.DESC;
         boolean actionSort=sortBy==null||sortBy.isBlank()||sortBy.equals("actionPriority");
         var specification=ProjectSpecifications.filter(industry,track,projectStatus,keyword,start,end,deleted).and(ProjectSpecifications.actions(actionRange,actionSort)).and(ProjectSpecifications.solutions(solution,subSolution)).and(ProjectSpecifications.people(responsibleId,hcsStatus));
-        specification=specification.and(ProjectSpecifications.followUp(followUpRange,fixedTarget,projectLevel,followUpPolicy.get()));
+        specification=specification.and(ProjectSpecifications.followUp(followUpRange,fixedTarget,projectLevel));
+        if("due".equals(followUpRange))specification=specification.and(followUpPolicy.due(followUpPolicy.get()));
         Page<Project> result = projectRepository.findAll(specification,actionSort?PageRequest.of(page,size):PageRequest.of(page,size,Sort.by(direction,property).and(Sort.by("id"))));
 
         List<Long> ids = result.getContent().stream().map(Project::getId).toList();

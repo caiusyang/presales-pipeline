@@ -13,7 +13,7 @@ public final class ProjectSpecifications {
 
     private ProjectSpecifications() {
     }
-    public static Specification<Project> followUp(String range,Boolean fixedTarget,String level,com.presales.pipeline.followup.FollowUpPolicyService.Policy policy){return(root,query,cb)->{
+    public static Specification<Project> followUp(String range,Boolean fixedTarget,String level){return(root,query,cb)->{
         var predicates=new ArrayList<Predicate>();
         if(fixedTarget!=null)predicates.add(cb.equal(root.get("fixedTarget"),fixedTarget));
         if(level!=null&&!level.isBlank()){
@@ -22,11 +22,7 @@ public final class ProjectSpecifications {
         }
         if(range!=null&&!range.isBlank()){
             if(!range.equals("due"))throw com.presales.pipeline.common.exception.BusinessException.badRequest("跟进提醒筛选不正确");
-            var today=java.time.LocalDate.now(com.presales.pipeline.common.config.BusinessTime.ZONE);
-            var last=cb.<java.time.LocalDateTime>coalesce(root.get("lastFollowUpAt"),root.get("createdAt"));
-            var fixed=cb.isTrue(root.get("fixedTarget"));
-            predicates.add(cb.isFalse(root.get("deleted")));predicates.add(cb.notEqual(root.get("projectStatus"),ProjectService.WON_STATUS));
-            predicates.add(cb.or(cb.and(fixed,cb.lessThan(last,today.minusDays(policy.fixedTargetDays()).plusDays(1).atStartOfDay())),cb.and(cb.not(fixed),cb.lessThan(last,today.minusDays(policy.normalDays()).plusDays(1).atStartOfDay()))));
+            predicates.add(cb.isFalse(root.get("deleted")));predicates.add(cb.or(cb.isNull(root.get("projectStatus")),cb.notEqual(root.get("projectStatus"),ProjectService.WON_STATUS)));
         }
         return cb.and(predicates.toArray(Predicate[]::new));
     };}

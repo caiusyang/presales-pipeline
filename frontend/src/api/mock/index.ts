@@ -41,7 +41,7 @@ import { parseProgressCell } from '@/lib/progressDate'
 import type { ProgressRepairInput, ProgressRepairRow } from '@/api/types'
 import { normalizeSolutions, solutionSelections, withSolutions } from '@/lib/solutions'
 import { matchPeople, type PersonInput } from '@/lib/people'
-import { DEFAULT_FOLLOW_UP_POLICY, followUpReminder, PROJECT_LEVELS } from '@/lib/followUp'
+import { DEFAULT_FOLLOW_UP_POLICY, followUpReminder, PROJECT_LEVELS, normalizeFollowUpPolicy, followUpFields, validateFollowUpPolicy } from '@/lib/followUp'
 
 // ============================================================
 // Mock 实现：在浏览器内模拟后端契约（判重 / dryRun / 修改日志 /
@@ -78,7 +78,7 @@ for (const project of db.projects) {
   project.fixedTarget ??= false
   project.projectLevel ??= null
 }
-db.followUpPolicy ??= { ...DEFAULT_FOLLOW_UP_POLICY }
+db.followUpPolicy = normalizeFollowUpPolicy(db.followUpPolicy ?? DEFAULT_FOLLOW_UP_POLICY)
 db.people ??= []
 let bulkExecutionCount = 0
 
@@ -351,11 +351,29 @@ function dictUsageCount(item: DictNode): number {
   }).length
 }
 
+function assertFollowUpDictionaryMutable(item: DictNode) {
+  const policy = normalizeFollowUpPolicy(db.followUpPolicy!)
+  if (!policy.rules.some((r) => r.value.toLowerCase() === item.value.toLowerCase())) return
+  const builtIn: Record<string, string> = { industry: 'industry', sub_industry: 'subIndustry', security_direction: 'securityDirection', track: 'track' }
+  if (builtIn[item.type] === policy.fieldKey || db.customFieldDefs.some((def) => `custom.${def.fieldKey}` === policy.fieldKey && def.dictionaryType === item.type)) throw new Error('该字典值已用于跟进周期，请先调整跟进提醒规则再改名或删除')
+}
+
 export const mockApi: ApiClient = {
-  getFollowUpPolicy: () => delay(() => ({ ...db.followUpPolicy! })),
+  getFollowUpFields: () => delay(() => structuredClone(followUpFields(effectiveCustomFieldDefs(), db.dictionaries))),
+  getFollowUpPolicy: () => delay(() => {
+    const policy = normalizeFollowUpPolicy(db.followUpPolicy!), field = followUpFields(effectiveCustomFieldDefs(), db.dictionaries).find((f) => f.key === policy.fieldKey)
+    if (!field) throw new Error('关联字段已删除或不再支持，请调整跟进配置')
+    return structuredClone({ ...policy, fieldLabel: field.label, applicableTracks: field.applicableTracks })
+  }),
   saveFollowUpPolicy: (input) => delay(() => {
-    if (![input.fixedTargetDays, input.normalDays].every((n) => Number.isInteger(n) && n >= 1 && n <= 3650)) throw new Error('跟进周期必须是 1—3650 天的整数')
-    db.followUpPolicy = { ...input }; persist(); return { ...input }
+    if (!input.fieldKey && db.followUpPolicy?.fieldKey !== 'fixedTarget') throw new Error('当前已关联其他字段，旧客户端不能重置规则，请刷新')
+    const policy = normalizeFollowUpPolicy(input), fields = followUpFields(effectiveCustomFieldDefs(), db.dictionaries), error = validateFollowUpPolicy(policy, fields)
+    if (error) throw new Error(error)
+    const field = fields.find((f) => f.key === policy.fieldKey)!
+    const rules = policy.rules.map((r) => ({ ...r, value: field.options.find((o) => o.value.toLowerCase() === r.value.trim().toLowerCase())?.value ?? r.value.trim() }))
+    db.followUpPolicy = { ...policy, rules, fieldLabel: field.label, applicableTracks: field.applicableTracks,
+      ...(field.key === 'fixedTarget' ? { fixedTargetDays: rules.find((r) => r.value.toLowerCase() === 'true')?.days ?? policy.defaultDays, normalDays: rules.find((r) => r.value.toLowerCase() === 'false')?.days ?? policy.defaultDays } : {}) }
+    persist(); return structuredClone(db.followUpPolicy)
   }),
   listPeople: () => delay(() => structuredClone(db.people ?? [])),
   savePerson,
@@ -404,7 +422,9 @@ export const mockApi: ApiClient = {
       }
       if (q.followUpRange) {
         if (q.followUpRange !== 'due') throw new Error('跟进提醒筛选范围无效')
-        list = list.filter((p) => followUpReminder(p, db.followUpPolicy!).due)
+        const policy = normalizeFollowUpPolicy(db.followUpPolicy!), field = followUpFields(effectiveCustomFieldDefs(), db.dictionaries).find((f) => f.key === policy.fieldKey)
+        if (!field) throw new Error('关联字段已删除或不再支持，请调整跟进配置')
+        list = list.filter((p) => followUpReminder(p, { ...policy, applicableTracks: field.applicableTracks }).due)
       }
       if (q.hcsStatus) list = list.filter((p) => p.hcsStatus === q.hcsStatus)
       if (q.responsibleId) list = list.filter((p) => p.responsibles?.some((r) => r.personId === q.responsibleId))
@@ -850,6 +870,7 @@ export const mockApi: ApiClient = {
     return delay(() => {
       const item = db.dictionaries.find((d) => d.id === id)
       if (!item) throw new Error('字典项不存在')
+      if (norm(input.value) !== item.value || input.type !== item.type) assertFollowUpDictionaryMutable(item)
       if (input.type !== item.type) throw new Error('字典类型不可修改')
       if (item.type === 'track' && input.value !== item.value) throw new Error('固定赛道不可改名')
       const nextValue = dictionaryValue(input, id)
@@ -899,6 +920,7 @@ export const mockApi: ApiClient = {
     return delay(() => {
       const item = db.dictionaries.find((d) => d.id === id)
       if (!item) throw new Error('字典项不存在')
+      assertFollowUpDictionaryMutable(item)
       if (item.type === 'track') throw new Error('固定赛道不能删除')
       const children = db.dictionaries.filter((d) => d.parentId === id)
       if (children.length) throw new Error(`请先删除其下 ${children.length} 个子项`)
@@ -1004,7 +1026,13 @@ export const mockApi: ApiClient = {
       const def = db.customFieldDefs.find((d) => d.id === id)
       if (!def) throw new Error('字段定义不存在')
       if (def.fieldKey !== input.fieldKey) throw new Error('字段编码创建后不可修改')
-      Object.assign(def, prepareCustomField(input, true), { updatedAt: now() })
+      const prepared = prepareCustomField(input, true)
+      if (db.followUpPolicy?.fieldKey === `custom.${def.fieldKey}`) {
+        if (!['text', 'option'].includes(prepared.fieldType)) throw new Error('该字段已关联跟进周期，请先切换关联字段再修改类型')
+        const values = prepared.dictionaryType ? db.dictionaries.filter((d) => d.type === prepared.dictionaryType).map((d) => d.value) : prepared.options
+        if (prepared.fieldType === 'option' && normalizeFollowUpPolicy(db.followUpPolicy).rules.some((r) => !values.some((v) => v.toLowerCase() === r.value.toLowerCase()))) throw new Error('有跟进规则仍使用被移除的选项，请先调整规则')
+      }
+      Object.assign(def, prepared, { updatedAt: now() })
       persist()
       return effectiveCustomFieldDefs().find((d) => d.id === def.id)!
     })
@@ -1013,6 +1041,7 @@ export const mockApi: ApiClient = {
     return delay(() => {
       const def = db.customFieldDefs.find((d) => d.id === id)
       if (!def) throw new Error('字段定义不存在')
+      if (db.followUpPolicy?.fieldKey === `custom.${def.fieldKey}`) throw new Error('该字段已关联跟进周期，请先切换跟进提醒的关联字段')
       const used = db.projects.filter((p) => norm(p.customFields?.[def.fieldKey]) !== '').length
       if (used) throw new Error(`该字段被 ${used} 个项目的数据引用，不可删除`)
       db.customFieldDefs = db.customFieldDefs.filter((d) => d.id !== id)

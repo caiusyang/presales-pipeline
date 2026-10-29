@@ -20,7 +20,15 @@ class MySqlMigrationTest {
             statement.executeUpdate("insert into revenues(project_id,revenue_month,amount,deleted,created_at,updated_at) values(90001,'2025-01',123.45,false,'2025-02-01','2025-02-01')");
             statement.executeUpdate("insert into project_products(project_id,product_code,created_at,updated_at) values(90001,'WAF','2025-01-01','2025-01-01')");
         }
+        Flyway.configure().dataSource(url,username,password).locations("classpath:db/migration").target("15").load().migrate();
+        try(var connection=DriverManager.getConnection(url,username,password);var statement=connection.createStatement()) {
+            statement.executeUpdate("update follow_up_policies set fixed_target_days=9,normal_days=18 where id=1");
+        }
         var flyway=Flyway.configure().dataSource(url,username,password).locations("classpath:db/migration").load();flyway.migrate();flyway.validate();
+        try(var connection=DriverManager.getConnection(url,username,password);var statement=connection.createStatement();var result=statement.executeQuery("select field_key,default_days,value_rules from follow_up_policies where id=1")) {
+            result.next();assertEquals("fixedTarget",result.getString(1));assertEquals(18,result.getInt(2));
+            var rules=new com.fasterxml.jackson.databind.ObjectMapper().readTree(result.getString(3));assertEquals(9,rules.get(0).path("days").asInt());assertEquals(18,rules.get(1).path("days").asInt());
+        }
         // Validate the real Hibernate/MySQL schema and run ordered catalog/mapping initializers, not just Flyway SQL.
         try(var context=new org.springframework.boot.builder.SpringApplicationBuilder(PresalesPipelineApplication.class).run(
                 "--server.port=0","--spring.datasource.url="+url,"--spring.datasource.username="+username,"--spring.datasource.password="+password,
@@ -29,6 +37,12 @@ class MySqlMigrationTest {
             var backup=context.getBean(com.presales.pipeline.backup.BackupService.class).exportAll();
             assertEquals(2,backup.tables().get("projects").size());assertTrue(backup.tables().containsKey("purged_project_snapshots"));
             assertEquals(1,backup.tables().get("follow_up_policies").size());
+            context.getBean(com.presales.pipeline.config.ConfigService.class).createCustomField(new com.presales.pipeline.config.dto.CustomFieldRequest("follow_tag","跟进标签","text",false,java.util.List.of(),999));
+            try(var connection=DriverManager.getConnection(url,username,password);var statement=connection.createStatement()) { statement.executeUpdate("update projects set custom_fields=JSON_OBJECT('follow_tag','VIP') where id=90001"); }
+            var follow=context.getBean(com.presales.pipeline.followup.FollowUpPolicyService.class);
+            follow.save(new com.presales.pipeline.followup.FollowUpPolicyService.Policy(null,null,"custom.follow_tag",3650,java.util.List.of(new com.presales.pipeline.followup.FollowUpPolicyService.Rule("vip",1)),null,null));
+            var due=context.getBean(com.presales.pipeline.project.ProjectService.class).list(null,null,null,null,null,null,0,1,"id","asc",false,null,null,null,null,null,"due",null,null);
+            assertEquals(1,due.totalElements());assertEquals(90001L,due.items().get(0).id());
         }
         try(var connection=DriverManager.getConnection(url,username,password);var statement=connection.createStatement()){
             try(var r=statement.executeQuery("select count(*),sum(security_budget) from projects")){r.next();assertEquals(2,r.getInt(1));assertEquals("10.50",r.getBigDecimal(2).toPlainString());}
@@ -38,7 +52,7 @@ class MySqlMigrationTest {
             try(var r=statement.executeQuery("select count(*),sum(amount) from revenues")){r.next();assertEquals(1,r.getInt(1));assertEquals("123.45",r.getBigDecimal(2).toPlainString());}
             try(var r=statement.executeQuery("select count(*) from project_products")){r.next();assertEquals(1,r.getInt(1));}
             try(var r=statement.executeQuery("select fixed_target,project_level,last_follow_up_at from projects where id=90001")){r.next();assertFalse(r.getBoolean(1));assertNull(r.getString(2));assertTrue(r.getString(3).startsWith("2025-02-01"));}
-            try(var r=statement.executeQuery("select fixed_target_days,normal_days from follow_up_policies where id=1")){r.next();assertEquals(7,r.getInt(1));assertEquals(14,r.getInt(2));}
+            try(var r=statement.executeQuery("select fixed_target_days,normal_days from follow_up_policies where id=1")){r.next();assertEquals(9,r.getInt(1));assertEquals(18,r.getInt(2));}
         }
     }
 }

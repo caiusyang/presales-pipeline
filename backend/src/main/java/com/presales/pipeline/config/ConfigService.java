@@ -39,11 +39,13 @@ public class ConfigService {
     private final ProjectRepository projectRepository;
     private final DictionaryOptions dictionaryOptions;
     private final ProductCatalog productCatalog;
+    private final com.presales.pipeline.followup.FollowUpReferences followUpReferences;
 
     public ConfigService(ImportMappingRepository importMappingRepository,
                          ExportTemplateRepository exportTemplateRepository,
                          CustomFieldDefinitionRepository customFieldRepository,
-                         ProjectRepository projectRepository, DictionaryOptions dictionaryOptions,ProductCatalog productCatalog) {
+                         ProjectRepository projectRepository, DictionaryOptions dictionaryOptions,ProductCatalog productCatalog,com.presales.pipeline.followup.FollowUpReferences followUpReferences) {
+        this.followUpReferences=followUpReferences;
         this.productCatalog=productCatalog;
         this.importMappingRepository = importMappingRepository;
         this.exportTemplateRepository = exportTemplateRepository;
@@ -200,12 +202,14 @@ public class ConfigService {
         }
         validateExistingValues(request);
         apply(definition, request, false);
+        followUpReferences.assertFieldUpdate(definition);
         return toResponse(definition);
     }
 
     @Transactional
     public void deleteCustomField(Long id) {
         CustomFieldDefinition definition = getCustomFieldEntity(id);
+        followUpReferences.assertFieldDeletable(definition.getFieldKey());
         boolean used = projectRepository.findAllByDeletedFalseOrderByIdAsc().stream()
                 .map(Project::getCustomFields)
                 .anyMatch(fields -> fields.containsKey(definition.getFieldKey()));

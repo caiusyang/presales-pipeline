@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { seedDB, type MockDB } from './seed'
 import { businessDate } from '@/lib/actions'
 import { emptyProjectInput, projectToInput } from '@/components/project/project-utils'
+import { DEFAULT_FOLLOW_UP_POLICY } from '@/lib/followUp'
 
 afterEach(() => { vi.unstubAllGlobals(); vi.resetModules() })
 async function setup() {
@@ -20,6 +21,27 @@ async function setup() {
 }
 
 describe('演示模式固定靶提醒', () => {
+  it('切换为项目级别后按新字段筛选，规则持久化且不重置项目跟进时间', async () => {
+    const { api } = await setup(), before = (await api.getProjectDetail(1)).project.lastFollowUpAt
+    const input = { ...DEFAULT_FOLLOW_UP_POLICY, fieldKey: 'projectLevel', defaultDays: 30, rules: [{ value: '高风险', days: 3 }] }
+    expect((await api.saveFollowUpPolicy(input)).fieldLabel).toBe('项目级别')
+    expect((await api.listProjects({ followUpRange: 'due', sortBy: 'id', sortDirection: 'asc' })).items.map((p) => p.id)).toEqual([1, 3, 4])
+    await expect(api.saveFollowUpPolicy({ fixedTargetDays: 7, normalDays: 14 })).rejects.toThrow('旧客户端')
+    expect((await api.getProjectDetail(1)).project.lastFollowUpAt).toBe(before)
+    vi.resetModules(); const reloaded = (await import('./index')).mockApi
+    expect(await reloaded.getFollowUpPolicy()).toMatchObject({ fieldKey: 'projectLevel', rules: input.rules, defaultDays: 30 })
+  })
+  it('没有项目引用的自定义字段也不能破坏跟进规则，显示名称可更改', async () => {
+    const { api } = await setup()
+    const field = { fieldKey: 'follow_tier', label: '跟进分层', fieldType: 'option' as const, required: false, options: ['A', 'B'], sortOrder: 99 }
+    const created = await api.createCustomField(field)
+    expect((await api.getFollowUpFields()).some((f) => f.key === 'custom.follow_tier')).toBe(true)
+    await api.saveFollowUpPolicy({ ...DEFAULT_FOLLOW_UP_POLICY, fieldKey: 'custom.follow_tier', defaultDays: 14, rules: [{ value: 'A', days: 3 }] })
+    await expect(api.deleteCustomField(created.id)).rejects.toThrow('关联跟进周期')
+    await expect(api.updateCustomField(created.id, { ...field, options: ['B'] })).rejects.toThrow('移除的选项')
+    await api.updateCustomField(created.id, { ...field, label: '新跟进分层' })
+    expect((await api.getFollowUpPolicy()).fieldLabel).toBe('新跟进分层（自定义）')
+  })
   it('跨页筛选与后端一致；中标、删除不提醒，风险级别不决定周期', async () => {
     const { api } = await setup()
     const page = await api.listProjects({ followUpRange:'due', size:1, sortBy:'id', sortDirection:'asc' })

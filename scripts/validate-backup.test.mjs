@@ -22,3 +22,17 @@ test('跟进规则与项目级别校验；旧备份可预检但明确提示补�
   backup.tables.projects[0].projectLevel = '重点'
   assert.equal(validateBackup(backup).errors.length, 3)
 })
+test('自定义字段关联规则的备份能预检，拒绝丢失字段、重复值和非法周期', () => {
+  const backup = { tables: Object.fromEntries(names.map((name) => [name, []])) }
+  backup.tables.custom_field_definitions = [{ id:1, fieldKey:'follow_class', fieldType:'text', deleted:false }]
+  backup.tables.follow_up_policies = [{ id:1, fixedTargetDays:7, normalDays:14, fieldKey:'custom.follow_class', defaultDays:14, rules:[{ value:'VIP', days:3 }] }]
+  assert.equal(validateBackup(backup).valid, true)
+  backup.tables.follow_up_policies[0].rules.push({ value:'vip', days:7 })
+  assert.ok(validateBackup(backup).errors.some((s) => s.includes('重复')))
+  backup.tables.custom_field_definitions[0].deleted = true
+  assert.ok(validateBackup(backup).errors.some((s) => s.includes('关联字段')))
+  backup.tables.follow_up_policies = {}
+  assert.equal(validateBackup(backup).valid, false)
+  backup.tables.follow_up_policies = [null]
+  assert.equal(validateBackup(backup).valid, false)
+})

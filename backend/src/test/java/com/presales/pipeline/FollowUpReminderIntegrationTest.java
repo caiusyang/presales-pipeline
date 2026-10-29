@@ -124,6 +124,60 @@ class FollowUpReminderIntegrationTest {
         assertTrue(detail(id).path("projectLevel").isNull());
     }
 
+    @Test void associationCanUseProjectLevelInsteadOfFixedTargetAndDoesNotTouchProjects() throws Exception {
+        long high=project("非固定靶高风险",false,"高风险",3);
+        project("固定靶无风险未到期",true,"无风险",3);
+        project("低风险到期",false,"低风险",7);
+        project("未评级默认周期",false,null,14);
+        String initial=detail(high).path("lastFollowUpAt").asText();
+        var configured=putData("/api/config/follow-up-policy",Map.of("fieldKey","projectLevel","defaultDays",14,"rules",List.of(Map.of("value","高风险","days",3),Map.of("value","低风险","days",7))));
+        assertEquals("项目级别",configured.path("fieldLabel").asText());
+        var due=getData("/api/projects?followUpRange=due&size=1&sortBy=id&sortDirection=asc");
+        assertEquals(3,due.path("totalElements").asInt());assertEquals(high,due.path("items").get(0).path("id").asLong());
+        assertEquals(initial,detail(high).path("lastFollowUpAt").asText());
+        mvc.perform(put("/api/config/follow-up-policy").with(csrf()).contentType(MediaType.APPLICATION_JSON).content("{\"fixedTargetDays\":7,\"normalDays\":14}")).andExpect(status().isConflict());
+        for(var invalid:List.of(
+                Map.of("fieldKey","securityBudget","defaultDays",14,"rules",List.of()),
+                Map.of("fieldKey","projectLevel","defaultDays",14,"rules",List.of(Map.of("value","不存在","days",3))),
+                Map.of("fieldKey","projectLevel","defaultDays",14,"rules",List.of(Map.of("value","高风险","days",3),Map.of("value","高风险","days",7))))) {
+            mvc.perform(put("/api/config/follow-up-policy").with(csrf()).contentType(MediaType.APPLICATION_JSON).content(mapper.writeValueAsString(invalid))).andExpect(status().isBadRequest());
+        }
+        putData("/api/config/follow-up-policy",Map.of("fieldKey","projectLevel","defaultDays",30,"rules",List.of()));
+        assertEquals(0,getData("/api/projects?followUpRange=due").path("totalElements").asInt());
+    }
+
+    @Test void customTextMatchesBeforePaginationAndRespectsItsTrackScope() throws Exception {
+        var def=postData("/api/config/custom-fields",Map.of("fieldKey","follow_class","label","跟进分类","fieldType","text","required",false,"options",List.of(),"sortOrder",99,"applicableTracks",List.of("HCS")));
+        assertTrue(getData("/api/config/follow-up-policy/fields").findValuesAsText("key").contains("custom.follow_class"));
+        long matches=postData("/api/projects",Map.of("customerName","自定义客户","projectName","HCS命中","track","HCS","customFields",Map.of("follow_class"," VIP "))).path("id").asLong();setBusinessTime(matches,3,false);
+        long outside=postData("/api/projects",Map.of("customerName","自定义客户","projectName","公有云不适用","track","公有云","customFields",Map.of("follow_class","VIP"))).path("id").asLong();setBusinessTime(outside,3,false);
+        long empty=postData("/api/projects",Map.of("customerName","自定义客户","projectName","空值默认","track","HCS","customFields",Map.of())).path("id").asLong();setBusinessTime(empty,14,false);
+        var configured=putData("/api/config/follow-up-policy",Map.of("fieldKey","custom.follow_class","defaultDays",14,"rules",List.of(Map.of("value","vip","days",3))));
+        assertEquals("HCS",configured.path("applicableTracks").get(0).asText());
+        var due=getData("/api/projects?followUpRange=due&size=1&sortBy=id&sortDirection=asc");
+        assertEquals(2,due.path("totalElements").asInt());assertEquals(matches,due.path("items").get(0).path("id").asLong());
+        assertEquals(empty,getData("/api/projects?followUpRange=due&size=1&page=1&sortBy=id&sortDirection=asc").path("items").get(0).path("id").asLong());
+        assertEquals("custom.follow_class",getData("/api/backup").path("tables").path("follow_up_policies").get(0).path("fieldKey").asText());
+        mvc.perform(delete("/api/config/custom-fields/"+def.path("id").asLong()).with(csrf())).andExpect(status().isConflict());
+    }
+
+    @Test void unusedFieldsAndDictionaryValuesStillHaveRuleReferenceProtection() throws Exception {
+        var def=postData("/api/config/custom-fields",Map.of("fieldKey","follow_tier","label","分层","fieldType","option","required",false,"options",List.of("A","B"),"sortOrder",99));
+        long id=def.path("id").asLong();
+        putData("/api/config/follow-up-policy",Map.of("fieldKey","custom.follow_tier","defaultDays",14,"rules",List.of(Map.of("value","A","days",3))));
+        mvc.perform(delete("/api/config/custom-fields/"+id).with(csrf())).andExpect(status().isConflict());
+        var changed=Map.of("fieldKey","follow_tier","label","分层","fieldType","option","required",false,"options",List.of("B"),"sortOrder",99);
+        mvc.perform(put("/api/config/custom-fields/"+id).with(csrf()).contentType(MediaType.APPLICATION_JSON).content(mapper.writeValueAsString(changed))).andExpect(status().isConflict());
+        assertTrue(getData("/api/config/follow-up-policy/fields").toString().contains("\"value\":\"A\""));
+        var dict=postData("/api/dictionaries",Map.of("type","industry","value","提醒专用行业","sortOrder",1));
+        putData("/api/config/follow-up-policy",Map.of("fieldKey","industry","defaultDays",14,"rules",List.of(Map.of("value","提醒专用行业","days",3))));
+        mvc.perform(delete("/api/dictionaries/"+dict.path("id").asLong()).with(csrf())).andExpect(status().isConflict());
+        mvc.perform(put("/api/dictionaries/"+dict.path("id").asLong()).with(csrf()).contentType(MediaType.APPLICATION_JSON).content(mapper.writeValueAsString(Map.of("type","industry","value","改名","sortOrder",1)))).andExpect(status().isConflict());
+        putData("/api/config/follow-up-policy",Map.of("fieldKey","industry","defaultDays",14,"rules",List.of()));
+        mvc.perform(delete("/api/dictionaries/"+dict.path("id").asLong()).with(csrf())).andExpect(status().isOk());
+        mvc.perform(delete("/api/config/custom-fields/"+id).with(csrf())).andExpect(status().isOk());
+    }
+
     private Map<String,Object> record(Map<String,Object> fields) { return Map.of("fields",fields,"revenues",List.of(),"progress",List.of()); }
     private long project(String name, boolean fixed, String level, int days) throws Exception {
         var fields = new HashMap<String,Object>(Map.of("customerName","提醒客户","projectName",name,"customFields",Map.of(),"fixedTarget",fixed));

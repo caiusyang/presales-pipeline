@@ -32,11 +32,13 @@ public class DictionaryService {
     private final CustomFieldDefinitionRepository customFields;
     private final ProductCatalog productCatalog;
     private final com.presales.pipeline.solution.ProjectSolutionRepository solutionRepository;
+    private final com.presales.pipeline.followup.FollowUpReferences followUpReferences;
 
     public DictionaryService(DictionaryRepository repository,
                              ProjectRepository projectRepository,
                              ChangeLogService changeLogService, DictionaryCategoryService categoryService,
-                             DictionaryCategoryRepository categories, CustomFieldDefinitionRepository customFields,ProductCatalog productCatalog,com.presales.pipeline.solution.ProjectSolutionRepository solutionRepository) {
+                             DictionaryCategoryRepository categories, CustomFieldDefinitionRepository customFields,ProductCatalog productCatalog,com.presales.pipeline.solution.ProjectSolutionRepository solutionRepository,com.presales.pipeline.followup.FollowUpReferences followUpReferences) {
+        this.followUpReferences=followUpReferences;
         this.solutionRepository=solutionRepository;
         this.productCatalog=productCatalog;
         this.repository = repository;
@@ -114,6 +116,7 @@ public class DictionaryService {
     public DictionaryNodeResponse update(Long id, DictionaryRequest request) {
         DictionaryItem item = getActive(id);
         if(item.getType().equals("track")&&(!request.type().equals("track")||!item.getValue().equals(request.value().trim())))throw BusinessException.conflict("固定赛道不可改名或更换类型");
+        if(!item.getValue().equals(request.value().trim())||!item.getType().equals(request.type()))followUpReferences.assertDictionaryValueMutable(item.getType(),item.getValue());
         String type = normalizeType(request.type());
         String value = clean(request.value());
         if ("product".equals(type)) {
@@ -155,6 +158,7 @@ public class DictionaryService {
     @Transactional
     public void delete(Long id) {
         DictionaryItem item = getActive(id);
+        followUpReferences.assertDictionaryValueMutable(item.getType(),item.getValue());
         if(item.getType().equals("track"))throw BusinessException.conflict("HCS、公有云为固定赛道，不能删除");
         if (repository.existsByParentIdAndDeletedFalse(id)) {
             throw BusinessException.conflict("该字典项仍有下级项，不能删除");

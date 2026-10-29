@@ -21,7 +21,7 @@ import { WinProjectDialog } from '@/components/project/WinProjectDialog'
 import { CompleteActionDialog } from '@/components/project/CompleteActionDialog'
 import { useBusinessDate } from '@/hooks/useBusinessDate'
 import { useCustomFieldDefs, useDictionaries, useProjectMutations, useProjects, usePeople, useFollowUpPolicy } from '@/hooks/queries'
-import { PROJECT_LEVELS } from '@/lib/followUp'
+import { PROJECT_LEVELS, normalizeFollowUpPolicy } from '@/lib/followUp'
 import { industryCascade, solutionCascade } from '@/lib/fields'
 import { cn } from '@/lib/utils'
 import type { ProjectListQuery } from '@/api/types'
@@ -42,6 +42,7 @@ export default function PipelinePage() {
   const [fixedTarget, setFixedTarget] = useState(''), [projectLevel, setProjectLevel] = useState('')
   const [followUpDue, setFollowUpDue] = useState(false)
   const followUpPolicyQ = useFollowUpPolicy()
+  const followUpPolicy = followUpPolicyQ.data ? normalizeFollowUpPolicy(followUpPolicyQ.data) : null
   const [startMonth, setStartMonth] = useState('')
   const [endMonth, setEndMonth] = useState('')
   const [recycleBin, setRecycleBin] = useState(false)
@@ -289,9 +290,9 @@ export default function PipelinePage() {
 
       {!recycleBin && <div className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/30 px-3 py-2 text-sm">
         {followUpPolicyQ.isError ? <span role="alert">跟进提醒规则读取失败，暂不计算提醒。<Button variant="link" size="sm" onClick={() => void followUpPolicyQ.refetch()}>重试</Button></span> : followUpPolicyQ.data ? <>
-          <span>跟进提醒：固定靶每 {followUpPolicyQ.data.fixedTargetDays} 天／非固定靶每 {followUpPolicyQ.data.normalDays} 天</span>
+          <span>跟进提醒：按「{followUpPolicy?.fieldLabel ?? followUpPolicy?.fieldKey}」关联 · {followUpPolicy?.rules.length} 条值规则 · 默认 {followUpPolicy?.defaultDays} 天</span>
           <Button size="sm" variant={followUpDue ? 'default' : 'outline'} onClick={() => setFollowUpDue((value) => !value)} aria-pressed={followUpDue}>只看需跟进{followUpCountQ.isError ? '（计数失败）' : followUpCountQ.isFetching ? '（统计中…）' : `（${followUpCountQ.data?.total ?? 0}）`}</Button>
-          <span className="text-xs text-muted-foreground">统计当前筛选范围的全部分页，仅提醒未中标的活动项目；项目级别不改变周期。</span>
+          <span className="text-xs text-muted-foreground">统计当前筛选范围的全部分页，仅提醒未中标的活动项目。</span>
         </> : <span>正在读取跟进提醒规则…</span>}
         <Link to="/settings?tab=follow-up" className="ml-auto text-xs underline underline-offset-4">调整跟进周期</Link>
       </div>}

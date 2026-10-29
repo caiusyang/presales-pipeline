@@ -67,11 +67,17 @@
 
 `projectStatus` 仅支持 `机会点识别`、`方案引导`、`方案设计`、`中标`，省略默认`机会点识别`。中标要求至少一组完整有效的 `solutions` 方案/细分和一个已购产品；状态回退保留信息。省略 `solutions` 的旧请求可由 `solution/subSolution` 转为一项，显式 `[]` 表示清空。产品编码从 `/config/products` 读取，不再固定。赛道可空（待分类），非空只支持 HCS、公有云。`lastFollowUpAt`、`hcsStatus`、`lastSyncAt` 为只读；可写 `hcsOpportunityId` 和手工 `responsibleIds`（更新省略保留，空数组清空手工关联，不影响 HCS 来源）。
 
-`fixedTarget` 为布尔值，新项目省略默认 false，更新省略保留原值。`projectLevel` 可空；新项目不默认“无风险”，更新省略/null 保留、显式空字符串清空。它不决定跟进周期。导入可识别是否固定靶的是/否、true/false、1/0、yes/no（大小写不敏感），未知文本进入待修正；导入显式空级别清空，缺列保留。导出固定靶显示“是/否”。
+`fixedTarget` 为布尔值，新项目省略默认 false，更新省略保留原值。`projectLevel` 可空；新项目不默认“无风险”，更新省略/null 保留、显式空字符串清空。只有被选作跟进关联字段时，项目级别才决定周期。导入可识别是否固定靶的是/否、true/false、1/0、yes/no（大小写不敏感），未知文本进入待修正；导入显式空级别清空，缺列保留。导出固定靶显示“是/否”。
 
 ### 跟进周期 `GET/PUT /api/config/follow-up-policy`
 
-读写 `{ "fixedTargetDays": 7, "normalDays": 14 }`，均为 1—3650 的整数天数，沿用登录/CSRF。按上海自然日，以 `lastFollowUpAt`（无值时 `createdAt`）为基准，到第 N 天开始提醒，下一天为逾期 1 天。仅未删除且本地状态非中标的项目参加；与 `nextActionDate` 独立。保存周期不会更新项目跟进时间。项目分页返回原有 `totalElements`，前端转换为 `total`。
+V16 请求示例：`{"fieldKey":"projectLevel","defaultDays":14,"rules":[{"value":"高风险","days":3},{"value":"低风险","days":7}]}`。周期均为 1—3650 的整数，最多100条；值不能为空或重复，分类字段必须符合其选项。返回还含只读 `fieldLabel` 和 `applicableTracks`。`GET /api/config/follow-up-policy/fields` 返回支持的系统字段及活跃自定义文本/选项字段，含稳定 key、显示名、类型、值选项、适用赛道。
+
+按完整字段值匹配，忽略首尾空格和大小写。空值、未配置值或不适用当前赛道时使用 defaultDays；不支持数值范围、多选值及多字段组合。旧 `fixedTargetDays/normalDays` 继续返回供兼容，仅在关联固定靶时代表有效周期；旧写请求仅在当前关联固定靶时可转换使用，否则409防止旧页面覆盖新关联。V16迁移保留原实际配置，不一律重置7/14。
+
+按上海自然日，以 `lastFollowUpAt`（无值时 `createdAt`）为基准，到第 N 天开始提醒，下一天为逾期 1 天。仅未删除且本地状态非中标的项目参加；与 `nextActionDate` 独立。保存关联字段、值规则或周期不会更新项目跟进时间。筛选按 SQL CASE 和 JSON 取值在分页前执行，不加载全表到应用内筛选。项目分页返回原有 `totalElements`，前端转换为 `total`。
+
+被关联的自定义字段不能删除或改成不支持类型，规则中使用的选项不能直接移除；关联字典值的改名/删除须先调整跟进规则，返回409说明依赖。字段仅改显示名可以正常保存。
 
 ### 本轮新增接口
 

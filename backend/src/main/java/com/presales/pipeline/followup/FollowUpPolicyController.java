@@ -17,6 +17,9 @@ public class FollowUpPolicyController {
         return ApiResponse.success(service.get());
     }
 
+    @GetMapping("/fields")
+    public ApiResponse<java.util.List<FollowUpFields.Field>> fields() { return ApiResponse.success(service.fields()); }
+
     @PutMapping
     public ApiResponse<FollowUpPolicyService.Policy> save(@Valid @RequestBody FollowUpPolicyService.Policy policy) {
         return ApiResponse.success(service.save(policy));

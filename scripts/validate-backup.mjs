@@ -13,6 +13,7 @@ export function validateBackup(backup) {
   }
   for (const name of required) {
     if (!Array.isArray(tables[name])) { errors.push(`缺少表或不是数组：${name}`); tables[name] = []; continue }
+    if (tables[name].some((row) => !row || typeof row !== 'object')) { errors.push(`${name} 包含非法记录`); tables[name] = tables[name].filter((row) => row && typeof row === 'object') }
     const ids = tables[name].map((r) => String(name === 'purged_project_snapshots' ? r.projectId : r.id))
     if (ids.includes('undefined') || ids.includes('null') || new Set(ids).size !== ids.length) errors.push(`${name} 主键缺失或重复`)
     sets[name] = new Set(ids)
@@ -35,6 +36,15 @@ export function validateBackup(backup) {
   for (const row of tables.projects) {
     if (row.fixedTarget != null && typeof row.fixedTarget !== 'boolean') errors.push(`projects#${row.id} 是否固定靶必须为布尔值`)
     if (row.projectLevel && !['无风险', '低风险', '高风险'].includes(row.projectLevel)) errors.push(`projects#${row.id} 项目级别无效`)
+  }
+  for (const rule of Array.isArray(tables.follow_up_policies) ? tables.follow_up_policies : []) {
+    if (!rule?.fieldKey && rule?.defaultDays == null && rule?.rules == null) continue // V15 backups still restore via migration.
+    const supported = ['fixedTarget', 'projectLevel', 'projectStatus', 'track', 'industry', 'subIndustry', 'securityDirection', 'hcsStatus']
+    const custom = tables.custom_field_definitions.find((f) => !f.deleted && `custom.${f.fieldKey}` === rule.fieldKey && ['text', 'option'].includes(f.fieldType))
+    if (!supported.includes(rule.fieldKey) && !custom) errors.push('跟进规则关联字段不存在或类型不受支持')
+    const validDays = (n) => Number.isInteger(n) && n >= 1 && n <= 3650
+    if (!validDays(rule.defaultDays) || !Array.isArray(rule.rules) || rule.rules.length > 100 || rule.rules.some((r) => !r || typeof r.value !== 'string' || !r.value.trim() || r.value.trim().length > 255 || !validDays(r.days))) errors.push('跟进字段值规则或默认周期无效')
+    else if (new Set(rule.rules.map((r) => r.value.trim().toLowerCase())).size !== rule.rules.length) errors.push('跟进字段值规则重复')
   }
   for (const [table, fields] of [['batch_jobs', ['payload']], ['batch_job_items', ['inputData', 'resultData']]]) for (const row of tables[table]) for (const field of fields) if (row[field] != null) try { JSON.parse(row[field]) } catch { errors.push(`${table}#${row.id} ${field} 不是有效 JSON`) }
   const incomeCents = tables.revenues.filter((r) => !r.deleted).reduce((n, r) => n + Math.round(Number(r.amount) * 100), 0)
