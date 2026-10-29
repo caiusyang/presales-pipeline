@@ -20,17 +20,17 @@ export function FollowUpPolicyManager() {
   const changed = !!policyQ.data && snapshot(input) !== snapshot(policyQ.data)
   const ready = !!policyQ.data && !!fieldsQ.data && !policyQ.isError && !fieldsQ.isError
   const updateRule = (index: number, changes: Partial<typeof rules[number]>) => setRules((current) => current.map((r, i) => i === index ? { ...r, ...changes } : r))
-  return <section className="space-y-4 rounded-md border p-4">
+  return <section className="space-y-4 rounded-xl border bg-card p-4 sm:p-5">
     <div><h2 className="font-medium">字段关联与跟进周期</h2><p className="mt-1 text-sm text-muted-foreground">选择一个系统分类字段或自定义文本／选项字段，为不同值设置周期。只提醒未中标且未删除的项目。</p></div>
     {policyQ.isError || fieldsQ.isError ? <p role="alert" className="text-sm text-destructive">规则或字段读取失败，无法修改。<Button variant="link" onClick={() => { void policyQ.refetch(); void fieldsQ.refetch() }}>重试</Button></p> : <>
-      <div className="grid max-w-lg gap-4 sm:grid-cols-2">
+      <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-2"><Label htmlFor="follow-up-field">关联字段</Label><Select id="follow-up-field" value={fieldKey} placeholder="选择关联字段" options={(fieldsQ.data ?? []).map((f) => ({ value: f.key, label: f.label }))} disabled={!ready || save.isPending} onValueChange={(key) => { setFieldKey(key); setRules([]) }} /></div>
         <div className="space-y-2"><Label htmlFor="default-follow-up-days">未匹配时的默认周期（天）</Label><Input id="default-follow-up-days" type="number" min="1" max="3650" step="1" value={defaultDays} onChange={(e) => setDefaultDays(e.target.value)} disabled={!ready || save.isPending} /></div>
       </div>
-      <div className="max-w-2xl space-y-2">
-        {rules.map((rule, index) => <div className="flex flex-wrap items-center gap-2" key={index}>
-          {field?.type === 'option' ? <Select className="w-64" aria-label={`规则 ${index + 1} 字段值`} value={rule.value} placeholder="选择字段值" options={[...field.options, ...(!field.options.some((o) => o.value === rule.value) && rule.value ? [{ value: rule.value, label: `${rule.value}（选项已失效）` }] : [])]} disabled={save.isPending} onValueChange={(value) => updateRule(index, { value })} /> : <Input className="w-64" aria-label={`规则 ${index + 1} 字段值`} placeholder="输入要匹配的完整字段值" maxLength={255} value={rule.value} disabled={save.isPending} onChange={(e) => updateRule(index, { value: e.target.value })} />}
-          <span className="text-sm">每</span><Input className="w-24" aria-label={`规则 ${index + 1} 周期`} type="number" min="1" max="3650" step="1" value={rule.days} disabled={save.isPending} onChange={(e) => updateRule(index, { days: e.target.value })} /><span className="text-sm">天跟进</span>
+      <div className="space-y-3 rounded-lg bg-muted/30 p-3">
+        {rules.map((rule, index) => <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] sm:items-center" key={index}>
+          {field?.type === 'option' ? <Select aria-label={`规则 ${index + 1} 字段值`} value={rule.value} placeholder="选择字段值" options={[...field.options, ...(!field.options.some((o) => o.value === rule.value) && rule.value ? [{ value: rule.value, label: `${rule.value}（选项已失效）` }] : [])]} disabled={save.isPending} onValueChange={(value) => updateRule(index, { value })} /> : <Input aria-label={`规则 ${index + 1} 字段值`} placeholder="输入要匹配的完整字段值" maxLength={255} value={rule.value} disabled={save.isPending} onChange={(e) => updateRule(index, { value: e.target.value })} />}
+          <div className="flex min-w-0 items-center gap-2"><span className="text-sm">每</span><Input className="min-w-0 flex-1" aria-label={`规则 ${index + 1} 周期`} type="number" min="1" max="3650" step="1" value={rule.days} disabled={save.isPending} onChange={(e) => updateRule(index, { days: e.target.value })} /><span className="shrink-0 text-sm">天跟进</span></div>
           <Button variant="ghost" disabled={save.isPending} aria-label={`移除规则 ${index + 1}`} onClick={() => setRules((current) => current.filter((_, i) => i !== index))}>移除</Button>
         </div>)}
         <Button variant="outline" disabled={!ready || !field || rules.length >= 100 || save.isPending} onClick={() => setRules((current) => [...current, { value: field?.type === 'option' ? field.options.find((o) => !current.some((r) => r.value === o.value))?.value ?? '' : '', days: defaultDays }])}>新增字段值规则</Button>

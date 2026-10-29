@@ -37,7 +37,7 @@ export function DrawerContent({
 }
 
 export function DrawerHeader({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn('border-b px-6 py-4 pr-12', className)} {...props} />
+  return <div className={cn('shrink-0 border-b px-4 py-4 pr-12 sm:px-6 sm:pr-12', className)} {...props} />
 }
 export function DrawerTitle({
   className,
@@ -52,8 +52,8 @@ export function DrawerDescription({
   return <DialogPrimitive.Description className={cn('text-sm text-muted-foreground', className)} {...props} />
 }
 export function DrawerBody({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn('flex-1 overflow-y-auto px-6 py-4', className)} {...props} />
+  return <div className={cn('min-h-0 min-w-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6', className)} {...props} />
 }
 export function DrawerFooter({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn('flex justify-end gap-2 border-t px-6 py-3', className)} {...props} />
+  return <div className={cn('flex shrink-0 flex-wrap justify-end gap-2 border-t px-4 py-3 sm:px-6', className)} {...props} />
 }

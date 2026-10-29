@@ -5,6 +5,7 @@ import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { EmptyState } from '@/components/common/EmptyState'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
@@ -46,6 +47,7 @@ export default function PipelinePage() {
   const [startMonth, setStartMonth] = useState('')
   const [endMonth, setEndMonth] = useState('')
   const [recycleBin, setRecycleBin] = useState(false)
+  const [showAllFilters, setShowAllFilters] = useState(false)
   const [actionRange, setActionRange] = useState<ProjectListQuery['actionRange']>()
   const [actionTarget, setActionTarget] = useState<Project | null>(null)
   const today = useBusinessDate()
@@ -193,28 +195,43 @@ export default function PipelinePage() {
     label: n.value,
   }))
   const trackOptions = (trackQ.data ?? []).map((n) => ({ value: n.value, label: n.value }))
+  const extraFilterClass = cn('filter-field', !showAllFilters && 'hidden sm:block')
+  const extraFilterCount = [fixedTarget, projectLevel, solution, subSolution, responsibleId, hcsStatus, startMonth, endMonth].filter(Boolean).length
 
   return (
-    <div className="space-y-4 p-6">
+    <div className="page-shell">
       {/* ---------- 工具栏 ---------- */}
-      <div className="flex flex-wrap items-center gap-2">
-        <Select className="w-40" aria-label="是否固定靶筛选" value={fixedTarget} onValueChange={setFixedTarget} options={[{ value: 'true', label: '固定靶' }, { value: 'false', label: '非固定靶' }]} placeholder="是否固定靶" clearable clearLabel="全部固定靶类型" />
-        <Select className="w-40" aria-label="项目级别筛选" value={projectLevel} onValueChange={setProjectLevel} options={PROJECT_LEVELS.map((level) => ({ value: level, label: level }))} placeholder="项目级别" clearable clearLabel="全部项目级别" />
-        <Select className="w-44" value={solution} onValueChange={(v) => { setSolution(v); setSubSolution('') }} options={solutionTree.solutions.map((s) => ({ value: s.value, label: s.value }))} placeholder="解决方案" clearable clearLabel="全部方案" />
-        <Select className="w-44" value={subSolution} onValueChange={setSubSolution} options={(solutionTree.subMap.get(solution) ?? []).map((s) => ({ value: s.value, label: s.value }))} disabled={!solution} placeholder="细分解决方案" clearable clearLabel="全部细分方案" />
-        <Select className="w-44" value={responsibleId} onValueChange={setResponsibleId} options={(peopleQ.data ?? []).map((p) => ({ value: String(p.id), label: `${p.name}${p.employeeNo ? ` · ${p.employeeNo}` : ''}` }))} placeholder="责任人" clearable clearLabel="全部责任人" />
-        <Input className="w-40" aria-label="HCS状态筛选" placeholder="筛选 HCS 状态" value={hcsStatus} onChange={(e) => setHcsStatus(e.target.value)} />
-        <div className="relative w-64">
+      <header className="flex flex-wrap items-start justify-between gap-4">
+        <div className="page-heading">
+          <h1>{recycleBin ? '项目回收站' : '项目管道'}</h1>
+          <p className="text-sm text-muted-foreground">集中管理项目、跟进提醒与下次行动</p>
+        </div>
+        <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center">
+          <Button variant={recycleBin ? 'secondary' : 'outline'} onClick={() => setRecycleBin((v) => !v)}><Trash2 />回收站</Button>
+          <ColumnConfigMenu columns={availableColumns} states={effectiveStates} onChange={updateColumns} />
+          <Link to="/import" className={cn(buttonVariants({ variant: 'outline' }))}><Upload />导入</Link>
+          <Link to="/export" className={cn(buttonVariants({ variant: 'outline' }))}><Download />导出</Link>
+          <Button className="col-span-2" onClick={() => setCreateOpen(true)}><Plus />新建项目</Button>
+        </div>
+      </header>
+
+      <section aria-label="项目筛选" className="filter-grid rounded-xl border bg-card p-4">
+        <div className="filter-field">
+          <Label htmlFor="pipeline-keyword">关键词</Label>
+          <div className="relative">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
+            id="pipeline-keyword"
             value={keyword}
             onChange={(e) => setKeyword(e.target.value)}
             placeholder="搜索客户 / 项目 / 外部编号"
             className="pl-8"
           />
+          </div>
         </div>
+        <div className="filter-field"><Label htmlFor="pipeline-industry">行业</Label>
         <Select
-          className="w-40"
+          id="pipeline-industry"
           value={industry}
           onValueChange={setIndustry}
           options={industryOptions}
@@ -222,8 +239,10 @@ export default function PipelinePage() {
           clearable
           clearLabel="全部行业"
         />
+        </div>
+        <div className="filter-field"><Label htmlFor="pipeline-track">赛道</Label>
         <Select
-          className="w-40"
+          id="pipeline-track"
           value={track}
           onValueChange={setTrack}
           options={[...trackOptions, { value: '__unclassified__', label: '待分类' }]}
@@ -231,8 +250,10 @@ export default function PipelinePage() {
           clearable
           clearLabel="全部赛道"
         />
+        </div>
+        <div className="filter-field"><Label htmlFor="pipeline-status">本地售前状态</Label>
         <Select
-          className="w-40"
+          id="pipeline-status"
           value={projectStatus}
           onValueChange={setProjectStatus}
           options={PROJECT_STATUSES.map((status) => ({ value: status, label: status }))}
@@ -240,47 +261,33 @@ export default function PipelinePage() {
           clearable
           clearLabel="全部状态"
         />
-        <div className="flex items-center gap-1">
+        </div>
+        <div className={extraFilterClass}><Label htmlFor="pipeline-target">是否固定靶</Label><Select id="pipeline-target" aria-label="是否固定靶筛选" value={fixedTarget} onValueChange={setFixedTarget} options={[{ value: 'true', label: '固定靶' }, { value: 'false', label: '非固定靶' }]} placeholder="是否固定靶" clearable clearLabel="全部固定靶类型" /></div>
+        <div className={extraFilterClass}><Label htmlFor="pipeline-level">项目级别</Label><Select id="pipeline-level" aria-label="项目级别筛选" value={projectLevel} onValueChange={setProjectLevel} options={PROJECT_LEVELS.map((level) => ({ value: level, label: level }))} placeholder="项目级别" clearable clearLabel="全部项目级别" /></div>
+        <div className={extraFilterClass}><Label htmlFor="pipeline-solution">解决方案</Label><Select id="pipeline-solution" value={solution} onValueChange={(v) => { setSolution(v); setSubSolution('') }} options={solutionTree.solutions.map((s) => ({ value: s.value, label: s.value }))} placeholder="解决方案" clearable clearLabel="全部方案" /></div>
+        <div className={extraFilterClass}><Label htmlFor="pipeline-sub-solution">细分解决方案</Label><Select id="pipeline-sub-solution" value={subSolution} onValueChange={setSubSolution} options={(solutionTree.subMap.get(solution) ?? []).map((s) => ({ value: s.value, label: s.value }))} disabled={!solution} placeholder="细分解决方案" clearable clearLabel="全部细分方案" /></div>
+        <div className={extraFilterClass}><Label htmlFor="pipeline-responsible">责任人</Label><Select id="pipeline-responsible" value={responsibleId} onValueChange={setResponsibleId} options={(peopleQ.data ?? []).map((p) => ({ value: String(p.id), label: `${p.name}${p.employeeNo ? ` · ${p.employeeNo}` : ''}` }))} placeholder="责任人" clearable clearLabel="全部责任人" /></div>
+        <div className={extraFilterClass}><Label htmlFor="pipeline-hcs-status">HCS 状态</Label><Input id="pipeline-hcs-status" aria-label="HCS状态筛选" placeholder="筛选 HCS 状态" value={hcsStatus} onChange={(e) => setHcsStatus(e.target.value)} /></div>
+        <div className={extraFilterClass}><Label htmlFor="pipeline-start-month">收入起始月份</Label>
           <Input
+            id="pipeline-start-month"
             type="month"
             value={startMonth}
             onChange={(e) => setStartMonth(e.target.value)}
-            className="w-36"
             aria-label="收入起始月份"
           />
-          <span className="text-muted-foreground">~</span>
+        </div>
+        <div className={extraFilterClass}><Label htmlFor="pipeline-end-month">收入结束月份</Label>
           <Input
+            id="pipeline-end-month"
             type="month"
             value={endMonth}
             onChange={(e) => setEndMonth(e.target.value)}
-            className="w-36"
             aria-label="收入结束月份"
           />
         </div>
-
-        <div className="ml-auto flex items-center gap-2">
-          <Button
-            variant={recycleBin ? 'secondary' : 'outline'}
-            onClick={() => setRecycleBin((v) => !v)}
-          >
-            <Trash2 className="h-4 w-4" />
-            回收站
-          </Button>
-          <ColumnConfigMenu columns={availableColumns} states={effectiveStates} onChange={updateColumns} />
-          <Button onClick={() => setCreateOpen(true)}>
-            <Plus className="h-4 w-4" />
-            新建项目
-          </Button>
-          <Link to="/import" className={cn(buttonVariants({ variant: 'outline' }))}>
-            <Upload className="h-4 w-4" />
-            导入
-          </Link>
-          <Link to="/export" className={cn(buttonVariants({ variant: 'outline' }))}>
-            <Download className="h-4 w-4" />
-            导出
-          </Link>
-        </div>
-      </div>
+        <Button variant="ghost" className="col-span-full sm:hidden" aria-expanded={showAllFilters} onClick={() => setShowAllFilters((value) => !value)}>{showAllFilters ? '收起更多筛选' : '展开更多筛选'}{extraFilterCount > 0 ? `（已用 ${extraFilterCount} 项）` : ''}</Button>
+      </section>
 
       {recycleBin && (
         <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
@@ -297,13 +304,13 @@ export default function PipelinePage() {
         <Link to="/settings?tab=follow-up" className="ml-auto text-xs underline underline-offset-4">调整跟进周期</Link>
       </div>}
 
-      <div className="flex flex-wrap items-center gap-2 text-sm">
+      <div className="flex flex-wrap items-center gap-2 rounded-xl border bg-card p-3 text-sm">
         <span className="text-xs text-muted-foreground">行动提醒（上海日期 {today}）</span>
         {[['', '全部'], ['overdue', '逾期'], ['today', '今天'], ['next7', '未来 7 天'], ['unscheduled', '未安排']].map(([value, label]) => <Button key={value} size="sm" variant={(actionRange ?? '') === value ? 'default' : 'outline'} onClick={() => setActionRange((value || undefined) as ProjectListQuery['actionRange'])}>{label}</Button>)}
         <Button size="sm" variant="ghost" onClick={() => setSort({})}>恢复行动优先排序</Button>
       </div>
       <CompleteActionDialog project={actionTarget} onClose={() => setActionTarget(null)} />
-      <div className="flex flex-wrap items-center gap-3 text-sm">
+      <div className="flex flex-wrap items-center gap-3 rounded-xl border bg-card p-3 text-sm">
         <span aria-live="polite">已选 {selectedProjects.size} 个项目</span>
         {recycleBin && <Button variant="outline" disabled={!selectedProjects.size || deleting} onClick={() => void restoreMany.mutateAsync([...selectedProjects.keys()]).then((result) => { setSelectedProjects((current) => new Map([...current].filter(([id]) => !result.deletedIds.includes(id)))) }).catch(() => {})}>批量恢复 {selectedProjects.size} 个项目</Button>}
         <Button variant="destructive" disabled={!selectedProjects.size || deleting} onClick={() => setBatchTargets([...selectedProjects.values()])}>
@@ -318,7 +325,7 @@ export default function PipelinePage() {
       </div>}
 
       {/* ---------- 表格 ---------- */}
-      <div className="rounded-md border">
+      <div className="overflow-hidden rounded-xl border bg-card">
         {projectsQ.isLoading ? (
           <div className="space-y-2 p-4">
             {Array.from({ length: 6 }).map((_, i) => (

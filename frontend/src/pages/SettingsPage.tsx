@@ -14,15 +14,15 @@ import { useSearchParams } from 'react-router-dom'
 export default function SettingsPage() {
   const [params] = useSearchParams()
   return (
-    <div className="mx-auto max-w-5xl space-y-4 p-6">
-      <header>
+    <div className="page-shell page-shell-form">
+      <header className="page-heading">
         <h1 className="text-lg font-semibold">配置</h1>
         <p className="text-sm text-muted-foreground">
           字典、导入映射、导出模板、自定义字段与数据备份，全部界面自助维护，无需改代码。
         </p>
       </header>
       <Tabs defaultValue={params.get('tab') === 'follow-up' ? 'follow-up' : 'dict'}>
-        <TabsList className="h-auto flex-wrap">
+        <TabsList aria-label="配置分类" className="grid w-full grid-cols-2 gap-1 sm:grid-cols-3 xl:grid-cols-6">
           <TabsTrigger value="dict">字典管理</TabsTrigger>
           <TabsTrigger value="follow-up">跟进提醒</TabsTrigger>
           <TabsTrigger value="mapping">导入映射</TabsTrigger>

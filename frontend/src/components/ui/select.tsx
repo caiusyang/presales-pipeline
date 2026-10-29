@@ -23,14 +23,14 @@ export interface SelectProps extends Omit<React.SelectHTMLAttributes<HTMLSelectE
  */
 export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
   ({ className, value, onValueChange, options, placeholder, clearable, clearLabel, disabled, ...props }, ref) => (
-    <div className={cn('relative', className)}>
+    <div className={cn('relative min-w-0', className)}>
       <select
         ref={ref}
         value={value}
         disabled={disabled}
         onChange={(e) => onValueChange(e.target.value)}
         className={cn(
-          'h-9 w-full appearance-none rounded-md border border-input bg-transparent pl-3 pr-8 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer',
+          'h-9 min-w-0 w-full appearance-none rounded-md border border-input bg-transparent pl-3 pr-8 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer',
           value === '' && 'text-muted-foreground',
         )}
         {...props}

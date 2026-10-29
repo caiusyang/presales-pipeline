@@ -99,6 +99,31 @@
   }
 }
 
+/* Shared page rhythm; wide tables scroll locally instead of stretching the page. */
+@layer components {
+  .page-shell {
+    @apply mx-auto w-full min-w-0 max-w-[1800px] space-y-5 p-4 pb-24 sm:p-6 sm:pb-24;
+  }
+  .page-shell-form {
+    @apply max-w-7xl;
+  }
+  .page-heading {
+    @apply space-y-1;
+  }
+  .page-heading h1 {
+    @apply text-xl font-semibold tracking-tight;
+  }
+  .filter-grid {
+    @apply grid grid-cols-1 gap-3 min-[360px]:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-6;
+  }
+  .filter-field {
+    @apply min-w-0 space-y-1.5;
+  }
+  .filter-field > label {
+    @apply block text-xs font-medium text-muted-foreground;
+  }
+}
+
 /* 表格横向滚动时表头吸顶 */
 .sticky-th th {
   position: sticky;

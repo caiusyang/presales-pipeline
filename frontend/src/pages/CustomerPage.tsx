@@ -72,13 +72,13 @@ export default function CustomerPage() {
   }
 
   return (
-    <div className="space-y-4 p-6">
-      <div>
+    <div className="page-shell">
+      <div className="page-heading">
         <h1 className="text-lg font-semibold">客户分析</h1>
         <p className="text-sm text-muted-foreground">从客户维度汇总关联项目、项目状态、累计收入和已购产品</p>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-5 [&>*:last-child]:col-span-2 xl:[&>*:last-child]:col-span-1">
         <SummaryCard icon={Users} label="客户数" value={String(customers.length)} />
         <SummaryCard icon={FolderKanban} label="关联项目" value={String(totals.projects)} />
         <SummaryCard icon={Trophy} label="中标项目" value={String(totals.won)} />
@@ -110,7 +110,7 @@ export default function CustomerPage() {
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/60">
-                <TableHead>客户名称</TableHead>
+                <TableHead className="min-w-40">客户名称</TableHead>
                 <TableHead>关联项目</TableHead>
                 <TableHead>项目状态</TableHead>
                 <TableHead className="min-w-64">已购产品</TableHead>
@@ -122,7 +122,7 @@ export default function CustomerPage() {
             <TableBody>
               {customers.map((customer) => (
                 <TableRow key={customer.customerName} className="cursor-pointer" onClick={() => setSelectedCustomer(customer)}>
-                  <TableCell className="font-medium">{customer.customerName}</TableCell>
+                  <TableCell className="whitespace-nowrap font-medium">{customer.customerName}</TableCell>
                   <TableCell>{customer.projectCount} 个</TableCell>
                   <TableCell>
                     <div className="flex flex-wrap gap-1">
@@ -158,7 +158,7 @@ export default function CustomerPage() {
           <DrawerBody>
             {selectedCustomer && (
               <div className="space-y-5">
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid gap-3 sm:grid-cols-3">
                   <Metric label="关联项目" value={`${selectedCustomer.projectCount} 个`} />
                   <Metric label="中标项目" value={`${selectedCustomer.wonProjectCount} 个`} />
                   <Metric label="累计收入" value={`${fmtAmount(selectedCustomer.revenueTotal)} 万元`} />

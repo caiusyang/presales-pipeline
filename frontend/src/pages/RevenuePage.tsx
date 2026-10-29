@@ -6,8 +6,8 @@ import { RevenueStatsMode } from '@/components/revenue/RevenueStatsMode'
 export default function RevenuePage() {
   const [tab, setTab] = useState('entry')
   return (
-    <div className="p-4 sm:p-6">
-      <div className="mb-4">
+    <div className="page-shell">
+      <div className="page-heading">
         <h1 className="text-lg font-semibold">收入统计</h1>
         <p className="text-sm text-muted-foreground">
           按月录入各项目收入（万元），并按项目 / 行业 / 月度 / 年度维度统计

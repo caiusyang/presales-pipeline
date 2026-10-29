@@ -229,7 +229,7 @@ function OverviewTab({ project, customDefs }: { project: Project; customDefs: Cu
       </div>}
       <p className="rounded border bg-muted/40 p-3 text-sm">HCS 状态（独立只读）：{project.hcsStatus || '未同步'} · 最近同步：{project.lastSyncAt || '尚未接入'}。本地售前状态由本平台维护，不随 HCS 状态改变。</p>
       <ProjectFormFields value={value} onChange={(next) => setDraft((current) => ({ ...current, value: next }))} />
-      <div className="flex items-center justify-between gap-4 border-t pt-3">
+      <div className="flex flex-wrap items-center justify-between gap-4 border-t pt-3">
         <div className="text-xs text-muted-foreground">
           创建于 {dayjs(project.createdAt).format('YYYY-MM-DD HH:mm')} · 更新于{' '}
           {dayjs(project.updatedAt).format('YYYY-MM-DD HH:mm')}
@@ -412,7 +412,7 @@ function RevenueTab({ projectId, revenues }: { projectId: ID; revenues: Revenue[
         </div>
       )}
 
-      <div className="flex items-center gap-2 border-t pt-3">
+      <div className="flex flex-wrap items-center gap-2 border-t pt-3">
         <Label className="shrink-0">添加月份</Label>
         <Input type="month" value={newMonth} onChange={(e) => setNewMonth(e.target.value)} className="w-44" />
         <Button variant="outline" size="sm" onClick={addMonth}>

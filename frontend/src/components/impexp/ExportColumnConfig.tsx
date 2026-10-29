@@ -52,11 +52,11 @@ export function ExportColumnConfig({ fields, columns, onChange }: Props) {
     onChange(columns.map((c, j) => (j === i ? { ...c, title } : c)))
 
   return (
-    <div className="grid gap-4 md:grid-cols-2">
-      <Card>
-        <CardHeader>
+    <div className="grid min-w-0 gap-4 lg:grid-cols-2">
+      <Card className="min-w-0">
+        <CardHeader className="min-h-24">
           <div className="flex items-start justify-between gap-3">
-            <div className="space-y-1">
+            <div className="min-w-0 space-y-1">
               <CardTitle className="text-base">可选列</CardTitle>
               <CardDescription>勾选加入导出，取消勾选移除</CardDescription>
             </div>
@@ -72,16 +72,16 @@ export function ExportColumnConfig({ fields, columns, onChange }: Props) {
         </CardHeader>
         <CardContent>
           {fields.length === 0 ? (
-            <EmptyState title="该范围暂无可选列" />
+            <div className="flex h-80 items-center justify-center"><EmptyState title="该范围暂无可选列" /></div>
           ) : (
-            <div className="max-h-80 space-y-1 overflow-auto">
+            <div className="h-80 space-y-1 overflow-y-auto pr-1">
               {fields.map((f) => (
                 <div
                   key={f.key}
                   role="checkbox"
                   aria-checked={selectedKeys.has(f.key)}
                   tabIndex={0}
-                  className="flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 text-sm hover:bg-accent"
+                  className="flex min-h-9 cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 text-sm hover:bg-accent"
                   onClick={() => toggle(f, !selectedKeys.has(f.key))}
                   onKeyDown={(e) => {
                     if (e.key === ' ' || e.key === 'Enter') {
@@ -95,8 +95,8 @@ export function ExportColumnConfig({ fields, columns, onChange }: Props) {
                     onCheckedChange={(v) => toggle(f, v === true)}
                     onClick={(e) => e.stopPropagation()}
                   />
-                  <span>{f.title}</span>
-                  <span className="ml-auto text-xs text-muted-foreground">{f.key}</span>
+                  <span className="min-w-0 flex-1 break-words">{f.title}</span>
+                  <span className="max-w-[42%] truncate text-xs text-muted-foreground" title={f.key}>{f.key}</span>
                 </div>
               ))}
             </div>
@@ -104,27 +104,27 @@ export function ExportColumnConfig({ fields, columns, onChange }: Props) {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
+      <Card className="min-w-0">
+        <CardHeader className="min-h-24">
           <CardTitle className="text-base">已选列（{columns.length}）</CardTitle>
           <CardDescription>可修改导出列名，顺序即 Excel 列顺序</CardDescription>
         </CardHeader>
         <CardContent>
           {columns.length === 0 ? (
-            <EmptyState title="尚未选择列" description="从左侧勾选需要导出的列" />
+            <div className="flex h-80 items-center justify-center"><EmptyState title="尚未选择列" description="从可选列中勾选需要导出的列" /></div>
           ) : (
-            <div className="max-h-80 space-y-1.5 overflow-auto">
+            <div className="h-80 space-y-1 overflow-y-auto pr-1">
               {columns.map((c, i) => (
-                <div key={c.key} className="flex items-center gap-1.5">
+                <div key={c.key} className="flex min-h-9 items-center gap-1.5">
                   <span className="w-5 shrink-0 text-center text-xs text-muted-foreground">{i + 1}</span>
-                  <Input value={c.title} onChange={(e) => setTitle(i, e.target.value)} className="h-8" />
-                  <Button variant="ghost" size="icon-sm" disabled={i === 0} onClick={() => move(i, -1)} title="上移">
+                  <Input aria-label={`第 ${i + 1} 列名称`} value={c.title} onChange={(e) => setTitle(i, e.target.value)} className="h-8 min-w-0 flex-1" />
+                  <Button variant="ghost" size="icon-sm" disabled={i === 0} onClick={() => move(i, -1)} title="上移" aria-label={`上移第 ${i + 1} 列`}>
                     <ArrowUp />
                   </Button>
-                  <Button variant="ghost" size="icon-sm" disabled={i === columns.length - 1} onClick={() => move(i, 1)} title="下移">
+                  <Button variant="ghost" size="icon-sm" disabled={i === columns.length - 1} onClick={() => move(i, 1)} title="下移" aria-label={`下移第 ${i + 1} 列`}>
                     <ArrowDown />
                   </Button>
-                  <Button variant="ghost" size="icon-sm" onClick={() => onChange(columns.filter((_, j) => j !== i))} title="移除">
+                  <Button variant="ghost" size="icon-sm" onClick={() => onChange(columns.filter((_, j) => j !== i))} title="移除" aria-label={`移除第 ${i + 1} 列`}>
                     <X />
                   </Button>
                 </div>

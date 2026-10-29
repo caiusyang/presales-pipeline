@@ -174,14 +174,14 @@ export default function ExportPage() {
   const loading = exportMut.isPending || generating
 
   return (
-    <div className="mx-auto max-w-6xl space-y-4 p-6">
-      <div>
+    <div className="page-shell page-shell-form">
+      <div className="page-heading">
         <h1 className="text-lg font-semibold">Excel 导出</h1>
         <p className="text-sm text-muted-foreground">默认按项目汇聚主表、各产品购买情况、各月收入和全部进展，每个项目导出为一行</p>
       </div>
 
       <Tabs value={scope} onValueChange={handleScopeChange}>
-        <TabsList>
+        <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4">
           <TabsTrigger value="combined">项目综合表</TabsTrigger>
           <TabsTrigger value="projects">项目主表</TabsTrigger>
           <TabsTrigger value="revenues">收入明细</TabsTrigger>
@@ -199,7 +199,7 @@ export default function ExportPage() {
             <Skeleton className="h-9 w-64" />
           ) : (
             <Select
-              className="w-64"
+              className="w-full sm:w-64"
               value={templateId != null ? String(templateId) : ''}
               onValueChange={handleSelectTemplate}
               options={scopeTemplates.map((t) => ({ value: String(t.id), label: t.name }))}
@@ -216,7 +216,7 @@ export default function ExportPage() {
       </Card>
 
       {fieldsQuery.isLoading ? (
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid gap-4 lg:grid-cols-2">
           <Skeleton className="h-64 w-full" />
           <Skeleton className="h-64 w-full" />
         </div>
@@ -239,7 +239,7 @@ export default function ExportPage() {
             <CardDescription>月份区间会同时限制收入月份、收入合计和进展日志；留空则导出全部期间</CardDescription>
           )}
         </CardHeader>
-        <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <CardContent className={projectBased ? 'grid gap-3 sm:grid-cols-2 xl:grid-cols-5' : 'grid gap-3 sm:grid-cols-2'}>
           {projectBased && (
             <>
               <div className="space-y-1.5">

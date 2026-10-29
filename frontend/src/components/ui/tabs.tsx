@@ -10,7 +10,7 @@ export function TabsList({
 }: React.ComponentPropsWithoutRef<typeof TabsPrimitive.List>) {
   return (
     <TabsPrimitive.List
-      className={cn('inline-flex h-9 items-center justify-center rounded-lg bg-muted p-1 text-muted-foreground', className)}
+      className={cn('inline-flex min-h-9 max-w-full flex-wrap items-center justify-start gap-1 rounded-lg bg-muted p-1 text-muted-foreground', className)}
       {...props}
     />
   )
@@ -35,5 +35,5 @@ export function TabsContent({
   className,
   ...props
 }: React.ComponentPropsWithoutRef<typeof TabsPrimitive.Content>) {
-  return <TabsPrimitive.Content className={cn('mt-3 focus-visible:outline-none', className)} {...props} />
+  return <TabsPrimitive.Content className={cn('mt-3 min-w-0 focus-visible:outline-none', className)} {...props} />
 }

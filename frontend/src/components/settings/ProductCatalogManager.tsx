@@ -15,7 +15,7 @@ export function ProductCatalogManager() {
   const [aliases, setAliases] = useState('')
   const open = (product: ProductDefinition | null) => { setEditing(product); setForm(product ? { ...product } : blank()); setAliases(product?.aliases.join('、') ?? '') }
   return <div className="space-y-4">
-    <div className="flex items-center justify-between gap-3"><p className="text-sm text-muted-foreground">编码创建后不可修改。名称、别名、适用赛道可维护；停用只禁止新增选择，历史项目和导出保留。方案字典中的产品节点引用此目录。</p><Button onClick={() => open(null)}>新增产品</Button></div>
+    <div className="flex flex-wrap items-start justify-between gap-3"><p className="min-w-0 flex-1 basis-64 text-sm text-muted-foreground">编码创建后不可修改。名称、别名、适用赛道可维护；停用只禁止新增选择，历史项目和导出保留。方案字典中的产品节点引用此目录。</p><Button onClick={() => open(null)}>新增产品</Button></div>
     <Table><TableHeader><TableRow><TableHead>编码</TableHead><TableHead>名称</TableHead><TableHead>别名</TableHead><TableHead>赛道</TableHead><TableHead>状态</TableHead><TableHead>排序</TableHead><TableHead>操作</TableHead></TableRow></TableHeader><TableBody>
       {(query.data ?? []).map((p) => <TableRow key={p.id}><TableCell>{p.code}</TableCell><TableCell>{p.name}</TableCell><TableCell>{p.aliases.join('、') || '—'}</TableCell><TableCell>{p.applicableTracks.join('、') || '公共'}</TableCell><TableCell>{p.enabled ? '启用' : '已停用'}</TableCell><TableCell>{p.sortOrder}</TableCell><TableCell><Button size="sm" variant="outline" onClick={() => open(p)}>编辑</Button></TableCell></TableRow>)}
     </TableBody></Table>

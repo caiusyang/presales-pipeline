@@ -81,16 +81,14 @@ export function RevenueEntryMode() {
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="grid gap-3 rounded-xl border bg-card p-4 sm:grid-cols-2 xl:grid-cols-[8rem_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.5fr)_auto] xl:items-center">
         <Select
-          className="w-28"
           value={year}
           onValueChange={setYear}
           options={YEARS.map((y) => ({ value: y, label: `${y} 年` }))}
           aria-label="年份"
         />
         <Select
-          className="w-40"
           value={industry}
           onValueChange={setIndustry}
           options={(industryDicts.data ?? []).map((d) => ({ value: d.value, label: d.value }))}
@@ -99,7 +97,6 @@ export function RevenueEntryMode() {
           aria-label="行业"
         />
         <Select
-          className="w-40"
           value={track}
           onValueChange={setTrack}
           options={(trackDicts.data ?? []).map((d) => ({ value: d.value, label: d.value }))}
@@ -108,14 +105,13 @@ export function RevenueEntryMode() {
           aria-label="赛道"
         />
         <Input
-          className="w-56"
           value={keyword}
           onChange={(e) => setKeyword(e.target.value)}
           placeholder="搜索客户 / 项目关键字"
           aria-label="关键字"
         />
         <Button
-          className="ml-auto"
+          className="sm:col-span-2 xl:col-span-1"
           disabled={dirtyEntries.length === 0 || save.isPending}
           onClick={handleSave}
         >

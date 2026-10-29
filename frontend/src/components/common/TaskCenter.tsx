@@ -30,14 +30,14 @@ export function TaskCenter() {
   const download = useMutation({ mutationFn: async (id: string) => { const result = await api.getJobResult(id) as ExportResult; await downloadExportXlsxAsync(result.columns, result.rows, '任务导出', `项目导出-${id.slice(0, 8)}.xlsx`) }, onError: (e) => toast.error(e.message) })
   const active = jobs.data?.filter(isJobRunning).length ?? 0
   return <>
-    <Button variant="outline" size="sm" className="fixed right-5 bottom-4 z-30 bg-background shadow-md" onClick={() => setOpen(true)}>后台任务{active ? `（执行中 ${active}）` : ''}</Button>
+    <Button variant="outline" size="sm" className="fixed right-4 bottom-4 z-30 bg-background shadow-md sm:right-6" onClick={() => setOpen(true)}>后台任务{active ? `（执行中 ${active}）` : ''}</Button>
     <Dialog open={open} onOpenChange={setOpen}><DialogContent className="max-w-4xl"><DialogHeader><DialogTitle>后台任务</DialogTitle><DialogDescription>每批 100 条、最多同时执行 2 个任务。刷新页面后可继续查看；服务中断保留成功项，重试只处理未成功项。</DialogDescription></DialogHeader>
       {jobs.isError && <p role="alert">任务加载失败，<button className="underline" onClick={() => void jobs.refetch()}>重新加载</button></p>}
       <div className="max-h-64 space-y-2 overflow-auto">{jobs.data?.map((job) => <div key={job.id} className="rounded-md border p-3 text-sm">
         <div className="flex flex-wrap items-center justify-between gap-2"><b>{labels[job.kind] ?? job.kind} · {states[job.status]}</b><span>总数 {job.total} / 已处理 {job.processed} / 成功 {job.succeeded} / 失败 {job.failed}</span></div>
         <progress className="mt-2 h-2 w-full" max={Math.max(1, job.total)} value={job.processed} />
         <p className="break-all text-xs text-muted-foreground">任务编号 {job.id}</p>{job.error && <p className="text-destructive">{job.error}</p>}
-        <div className="mt-2 flex gap-2"><Button size="xs" variant="outline" onClick={() => { setSelected(job.id); setPage(0) }}>查看逐项结果</Button>
+        <div className="mt-2 flex flex-wrap gap-2"><Button size="xs" variant="outline" onClick={() => { setSelected(job.id); setPage(0) }}>查看逐项结果</Button>
           {!isJobRunning(job) && job.status !== 'SUCCEEDED' && <Button size="xs" variant="outline" disabled={retry.isPending} onClick={() => retry.mutate(job.id)}>重试未成功项</Button>}
           {job.kind === 'EXPORT' && job.status === 'SUCCEEDED' && <Button size="xs" disabled={download.isPending} onClick={() => download.mutate(job.id)}>下载导出结果</Button>}
         </div>

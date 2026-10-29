@@ -104,29 +104,29 @@ export default function ImportPage() {
   }
 
   return (
-    <div className="mx-auto max-w-6xl space-y-4 p-6">
-      <div>
+    <div className="page-shell page-shell-form">
+      <div className="page-heading">
         <h1 className="text-lg font-semibold">Excel 导入向导</h1>
         <p className="text-sm text-muted-foreground">上传 → 映射调整 → 确认执行，三步完成；文件在本地解析，不经过服务器</p>
       </div>
 
-      <div className="flex flex-wrap items-center gap-3 rounded-md border p-3 text-sm">
-        <Label>本次导入赛道</Label><Select className="w-36" value={sourceTrack} onValueChange={setSourceTrack} clearable clearLabel="未指定" placeholder="未指定" options={['HCS', '公有云'].map((v) => ({ value: v, label: v }))} />
-        <Label htmlFor="progress-default-year">进展默认年份</Label>
-        <Input id="progress-default-year" type="number" className="w-28" min={1000} max={9999} placeholder="如 2025" value={defaultYear} onChange={(event) => setDefaultYear(event.target.value)} />
-        <span className="text-xs text-muted-foreground">仅用于“9月13日、09/13”等缺少年份的日期；不填写时此类记录待修正，不使用导入当天。</span>
+      <div className="grid gap-4 rounded-xl border bg-card p-4 text-sm sm:grid-cols-2 lg:grid-cols-[12rem_12rem_minmax(0,1fr)] lg:items-end">
+        <div className="filter-field"><Label htmlFor="import-track">本次导入赛道</Label><Select id="import-track" value={sourceTrack} onValueChange={setSourceTrack} clearable clearLabel="未指定" placeholder="未指定" options={['HCS', '公有云'].map((v) => ({ value: v, label: v }))} /></div>
+        <div className="filter-field"><Label htmlFor="progress-default-year">进展默认年份</Label>
+        <Input id="progress-default-year" type="number" min={1000} max={9999} placeholder="如 2025" value={defaultYear} onChange={(event) => setDefaultYear(event.target.value)} /></div>
+        <p className="text-xs leading-relaxed text-muted-foreground sm:col-span-2 lg:col-span-1">仅用于“9月13日、09/13”等缺少年份的日期；不填写时此类记录待修正，不使用导入当天。</p>
       </div>
 
       {/* 步骤条 */}
-      <div className="flex items-center gap-2">
+      <div aria-label="导入步骤" className="flex items-start justify-between gap-2 rounded-xl border bg-card p-4 sm:justify-start sm:gap-4">
         {STEPS.map((label, i) => {
           const n = i + 1
           const active = n === step
           const done = n < step
           return (
-            <div key={label} className="flex items-center gap-2">
-              {i > 0 && <div className={cn('h-px w-10 sm:w-16', done || active ? 'bg-primary/50' : 'bg-border')} />}
-              <div className="flex items-center gap-2">
+            <div key={label} aria-current={active ? 'step' : undefined} className="flex min-w-0 items-center gap-4">
+              {i > 0 && <div className={cn('hidden h-px w-10 shrink-0 sm:block lg:w-16', done || active ? 'bg-primary/50' : 'bg-border')} />}
+              <div className="flex flex-col items-center gap-2 sm:flex-row">
                 <div
                   className={cn(
                     'flex h-7 w-7 items-center justify-center rounded-full border text-xs font-medium',
@@ -137,7 +137,7 @@ export default function ImportPage() {
                 >
                   {done ? <Check className="h-3.5 w-3.5" /> : n}
                 </div>
-                <span className={cn('text-sm', active ? 'font-medium' : 'text-muted-foreground')}>{label}</span>
+                <span className={cn('whitespace-nowrap text-xs sm:text-sm', active ? 'font-medium' : 'text-muted-foreground')}>{label}</span>
               </div>
             </div>
           )
